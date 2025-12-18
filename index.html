@@ -1,0 +1,75 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FinTrack Sheetpulser</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              slate: {
+                850: '#151e2e',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      /* Custom scrollbar handling for Light/Dark modes */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      
+      /* Light Mode Defaults */
+      ::-webkit-scrollbar-track {
+        background: #f1f5f9; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1; 
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8; 
+      }
+
+      /* Dark Mode Overrides */
+      .dark ::-webkit-scrollbar-track {
+        background: #0f172a; 
+      }
+      .dark ::-webkit-scrollbar-thumb {
+        background: #334155; 
+      }
+      .dark ::-webkit-scrollbar-thumb:hover {
+        background: #475569; 
+      }
+
+      body {
+        transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+        transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+        transition-duration: 300ms;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
+    "recharts": "https://esm.sh/recharts@^3.5.1",
+    "idb": "https://esm.sh/idb@8.0.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-200 antialiased selection:bg-blue-500/30">
+    <div id="root"></div>
+  </body>
+</html>
