@@ -36,6 +36,7 @@ export interface Trade {
 
 export interface Subscription {
   id: string;
+  rowIndex?: number;
   name: string;
   cost: number;
   period: 'Monthly' | 'Yearly' | 'Weekly' | 'Other';
@@ -46,6 +47,7 @@ export interface Subscription {
 
 export interface BankAccount {
   id: string;
+  rowIndex?: number;
   name: string;
   institution: string;
   type: string;

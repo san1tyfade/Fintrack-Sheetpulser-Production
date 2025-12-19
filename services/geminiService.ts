@@ -41,6 +41,16 @@ const TICKER_ALIASES: Record<string, string> = {
 
 const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
+const HEADER_KEYWORDS: Record<string, string[]> = {
+    assets: ['name', 'value', 'amount', 'balance', 'asset', 'account'],
+    investments: ['ticker', 'symbol', 'quantity', 'qty', 'avg', 'cost'],
+    trades: ['date', 'ticker', 'symbol', 'qty', 'price', 'type'],
+    subscriptions: ['name', 'service', 'cost', 'price', 'period', 'active'],
+    accounts: ['institution', 'bank', 'account', 'type', 'card'],
+    logData: ['date', 'worth', 'total', 'balance', 'net'],
+    debt: ['name', 'owed', 'rate', 'payment', 'loan']
+};
+
 export const normalizeTicker = (ticker: string): string => {
   if (!ticker) return 'UNKNOWN';
   let clean = ticker.toUpperCase().trim();
@@ -117,9 +127,6 @@ const parseFlexibleDate = (dateStr: string): string | null => {
     const cleanStr = dateStr.trim();
     
     // 1. Explicit Regex Matching for numeric formats
-    
-    // Match YYYY/MM/DD or YYYY-MM-DD or YYYY.MM.DD
-    // Regex allows trailing content (like time) but anchors to start
     const isoMatch = cleanStr.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
     if (isoMatch) {
         const y = parseInt(isoMatch[1]);
@@ -130,7 +137,6 @@ const parseFlexibleDate = (dateStr: string): string | null => {
         }
     }
 
-    // Match MM/DD/YYYY or MM-DD-YYYY
     const usMatch = cleanStr.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
     if (usMatch) {
         const m = parseInt(usMatch[1]);
@@ -141,20 +147,16 @@ const parseFlexibleDate = (dateStr: string): string | null => {
         }
     }
     
-    // 2. Existing Month-Name Logic (Jan-24, Jan 2024, etc)
+    // 2. Existing Month-Name Logic
     const lower = cleanStr.toLowerCase();
     const normalized = lower.replace(/[\s,]+/g, '-');
-    
-    // Check Month-Year format (e.g. jan-24) or just Month (Jan)
     const mName = MONTH_NAMES.find(m => normalized.startsWith(m));
     if (mName) {
         const monthIndex = MONTH_NAMES.indexOf(mName);
         const remainder = normalized.replace(mName, '').replace(/[^0-9]/g, '');
-        let year = new Date().getFullYear(); // Default to current year if only month is present
-        
+        let year = new Date().getFullYear();
         if (remainder.length === 2) year = 2000 + parseInt(remainder);
         else if (remainder.length === 4) year = parseInt(remainder);
-        
         return formatDateToLocalISO(new Date(year, monthIndex, 1));
     }
 
@@ -202,13 +204,10 @@ const createAssetParser = (headers: string[]) => {
     return (values: string[]): Asset | null => {
         const name = (idx.name !== -1 ? values[idx.name] : '') || 'Unknown Asset';
         const value = parseNumber(idx.value !== -1 ? values[idx.value] : '0');
-        
         if (name === 'Unknown Asset' && value === 0) return null;
-
         let type = (idx.type !== -1 ? values[idx.type] : '') || 'Other';
         const currency = (idx.currency !== -1 ? values[idx.currency] : '') || 'CAD';
         const lastUpdated = idx.lastUpdated !== -1 ? values[idx.lastUpdated] : undefined;
-
         const nameLower = name.toLowerCase();
         if (nameLower.includes('fhsa')) type = 'FHSA';
         else if (nameLower.includes('tfsa')) type = 'TFSA';
@@ -217,7 +216,6 @@ const createAssetParser = (headers: string[]) => {
         else if (nameLower.includes('fund') || nameLower.includes('savings')) type = 'Cash';
         else if (nameLower.includes('car') || nameLower.includes('vehicle')) type = 'Personal Property';
         else if (nameLower.includes('house') || nameLower.includes('real estate') || nameLower.includes('property') || nameLower.includes('condo')) type = 'Real Estate';
-
         return { id: generateId(), name, type, value, currency, lastUpdated };
     };
 };
@@ -238,18 +236,14 @@ const createInvestmentParser = (headers: string[]) => {
         const name = (idx.name !== -1 ? values[idx.name] : '') || 'Unknown Investment';
         const ticker = (idx.ticker !== -1 ? values[idx.ticker] : '') || name;
         const quantity = parseNumber(idx.qty !== -1 ? values[idx.qty] : '0');
-        
         if (ticker === 'Unknown Investment' && quantity === 0) return null;
-
         const avgPrice = parseNumber(idx.avgPrice !== -1 ? values[idx.avgPrice] : '0');
         const currentPrice = parseNumber(idx.currentPrice !== -1 ? values[idx.currentPrice] : '0');
         const accountName = (idx.account !== -1 ? values[idx.account] : '') || 'Uncategorized';
         const assetClass = (idx.class !== -1 ? values[idx.class] : '') || 'Other';
         const marketValue = parseNumber(idx.marketValue !== -1 ? values[idx.marketValue] : '0');
-
         let finalPrice = currentPrice;
         if (finalPrice === 0 && quantity !== 0 && marketValue !== 0) finalPrice = marketValue / quantity;
-
         return { id: generateId(), ticker, name, quantity, avgPrice, currentPrice: finalPrice, accountName, assetClass, marketValue };
     };
 };
@@ -266,43 +260,21 @@ const createTradeParser = (headers: string[]) => {
         fee: ['fee', 'commission', 'transaction fee']
     });
 
-    if (idx.marketPrice !== -1 && idx.price === idx.marketPrice) {
-        const header = (headers[idx.price] || '').toLowerCase();
-        if (header.includes('market') || header.includes('current') || header.includes('live')) {
-            idx.price = -1;
-        }
-    }
-
     return (values: string[]): Trade | null => {
         const ticker = (idx.ticker !== -1 ? values[idx.ticker] : '') || 'UNKNOWN';
         if (ticker === 'UNKNOWN') return null;
-
         const date = (idx.date !== -1 ? values[idx.date] : '') || new Date().toISOString().split('T')[0];
         let quantity = parseNumber(idx.qty !== -1 ? values[idx.qty] : '0');
         const rawType = (idx.type !== -1 ? values[idx.type] : '').toUpperCase();
-        
         let type: 'BUY' | 'SELL' = 'BUY';
         if (rawType.includes('SELL') || rawType.includes('SOLD') || rawType.includes('OUT') || quantity < 0) type = 'SELL';
-
         let price = parseNumber(idx.price !== -1 ? values[idx.price] : '0');
         let total = parseNumber(idx.total !== -1 ? values[idx.total] : '0');
         const fee = parseNumber(idx.fee !== -1 ? values[idx.fee] : '0');
         const marketPrice = parseNumber(idx.marketPrice !== -1 ? values[idx.marketPrice] : '0');
-
         if (total === 0 && quantity !== 0 && price !== 0) total = quantity * price;
         if (price === 0 && quantity !== 0 && total !== 0) price = total / quantity;
-
-        return { 
-            id: generateId(), 
-            date, 
-            ticker, 
-            type, 
-            quantity: Math.abs(quantity), 
-            price: Math.abs(price), 
-            total: Math.abs(total), 
-            fee,
-            marketPrice: Math.abs(marketPrice)
-        };
+        return { id: generateId(), date, ticker, type, quantity: Math.abs(quantity), price: Math.abs(price), total: Math.abs(total), fee, marketPrice: Math.abs(marketPrice) };
     };
 };
 
@@ -319,17 +291,12 @@ const createSubscriptionParser = (headers: string[]) => {
     return (values: string[]): Subscription | null => {
         const name = (idx.name !== -1 ? values[idx.name] : '') || 'Unknown Service';
         const cost = parseNumber(idx.cost !== -1 ? values[idx.cost] : '0');
-
         if (cost <= 0 && name === 'Unknown Service') return null;
-
         const period = (idx.period !== -1 ? values[idx.period] : '') || 'Monthly';
         const category = (idx.category !== -1 ? values[idx.category] : '') || 'General';
-        
         const activeRaw = idx.active !== -1 ? values[idx.active] : '';
         const active = activeRaw ? !['false', 'no', 'inactive', 'cancelled'].includes(activeRaw.toLowerCase()) : true;
-        
         const paymentMethod = (idx.method !== -1 ? values[idx.method] : '') || '';
-
         return { id: generateId(), name, cost, period: period as any, category, active, paymentMethod };
     };
 };
@@ -348,22 +315,17 @@ const createAccountParser = (headers: string[]) => {
     return (values: string[]): BankAccount | null => {
         const institution = (idx.institution !== -1 ? values[idx.institution] : '') || 'Unknown Bank';
         const name = (idx.name !== -1 ? values[idx.name] : '') || 'Account';
-        
         if (institution === 'Unknown Bank' && name === 'Account') return null;
-
         const type = (idx.type !== -1 ? values[idx.type] : '') || 'Checking';
         const paymentType = (idx.paymentType !== -1 ? values[idx.paymentType] : '') || 'Card';
-        
         let accountNumber = (idx.num !== -1 ? values[idx.num] : '') || '****';
         if (accountNumber.length > 4) accountNumber = accountNumber.slice(-4);
-        
         let transactionType = (idx.transType !== -1 ? values[idx.transType] : '') || '';
         if (!transactionType) {
             const combined = (type + ' ' + paymentType + ' ' + name).toLowerCase();
             transactionType = (combined.includes('credit') || combined.includes('visa') || combined.includes('mastercard') || combined.includes('amex')) ? 'Credit' : 'Debit';
         }
         const purpose = (idx.purpose !== -1 ? values[idx.purpose] : '') || 'General';
-
         return { id: generateId(), institution, name, type, paymentType, accountNumber, transactionType, currency: 'CAD', purpose };
     };
 };
@@ -377,17 +339,13 @@ const createLogDataParser = (headers: string[]) => {
     return (values: string[]): NetWorthEntry | null => {
         const dateStr = (idx.date !== -1 ? values[idx.date] : values[0]) || '';
         const valStr = (idx.value !== -1 ? values[idx.value] : values[1]) || '';
-        
         const value = parseNumber(valStr);
         if (!dateStr && value === 0) return null;
-
         const dateObj = new Date(dateStr);
         if (isNaN(dateObj.getTime())) return null;
-
         if (dateObj.getFullYear() === 2001 && !dateStr.includes('2001')) {
             dateObj.setFullYear(new Date().getFullYear());
         }
-
         return { date: formatDateToLocalISO(dateObj), value };
     };
 };
@@ -402,36 +360,26 @@ const createDebtParser = (headers: string[]) => {
 
     return (values: string[]): DebtEntry | null => {
         let name = (idx.name !== -1 ? values[idx.name] : '') || 'Loan';
-        // Cleanup: If name looks like a number (e.g. Loan Amount value), default to Generic
-        if (!isNaN(parseFloat(name)) && name.match(/^\$?\d/)) {
-            name = 'Loan';
-        }
-
+        if (!isNaN(parseFloat(name)) && name.match(/^\$?\d/)) name = 'Loan';
         const amountOwed = parseNumber(idx.owed !== -1 ? values[idx.owed] : '0');
         const interestRate = parseNumber(idx.rate !== -1 ? values[idx.rate] : '0');
         const monthlyPayment = parseNumber(idx.payment !== -1 ? values[idx.payment] : '0');
-
         if (amountOwed === 0 && monthlyPayment === 0 && interestRate === 0) return null;
-
         return { id: generateId(), name, amountOwed, interestRate, monthlyPayment };
     };
 };
 
 // --- Detailed Expense Parser ---
 export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
-    // ... (Existing implementation omitted for brevity, keeping it unchanged)
     const categories: ExpenseCategory[] = [];
     let headerIdx = -1;
     let bestMonthCount = 0;
-
     for (let i = 0; i < Math.min(lines.length, 30); i++) {
         const row = parseCSVLine(lines[i]);
         let count = 0;
         for (let j = 1; j <= 12; j++) {
             const val = (row[j] || '').trim().toLowerCase();
-            if (val && MONTH_NAMES.some(m => val.startsWith(m))) {
-                count++;
-            }
+            if (val && MONTH_NAMES.some(m => val.startsWith(m))) count++;
         }
         const isTitleRow = (row[0] || '').toLowerCase().includes("expense categorie");
         if (count > bestMonthCount) {
@@ -440,91 +388,55 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
         } else if (count === bestMonthCount && count > 0 && isTitleRow) {
              headerIdx = i;
         }
-        if (count === 12) {
-            headerIdx = i;
-            break;
-        }
     }
-
     if (headerIdx === -1 || bestMonthCount < 2) {
          for (let i = 0; i < lines.length; i++) {
             const row = parseCSVLine(lines[i]);
             if (row[0] && row[0].toLowerCase().includes("expense categorie")) {
-                if (row[1]) {
-                    headerIdx = i;
-                } else if (lines[i+1]) {
-                    headerIdx = i + 1;
-                } else {
-                    headerIdx = i;
-                }
+                headerIdx = row[1] ? i : i + 1;
                 break;
             }
         }
     }
-
-    if (headerIdx === -1 || headerIdx >= lines.length - 1) {
-        return { months: [], categories: [] };
-    }
-
+    if (headerIdx === -1 || headerIdx >= lines.length - 1) return { months: [], categories: [] };
     const headerRow = parseCSVLine(lines[headerIdx]);
     const months: string[] = [];
-    for (let j = 1; j <= 12; j++) {
-        months.push(headerRow[j] ? headerRow[j].trim() : `Month ${j}`);
-    }
-
+    for (let j = 1; j <= 12; j++) months.push(headerRow[j] ? headerRow[j].trim() : `Month ${j}`);
     let currentCategory: ExpenseCategory | null = null;
-
     for (let i = headerIdx + 1; i < lines.length; i++) {
         const row = parseCSVLine(lines[i]);
         const name = (row[0] || '').trim();
         const lowerName = name.toLowerCase();
-        
         if (!name) {
-            if (currentCategory) {
-                categories.push(currentCategory);
-                currentCategory = null;
-            }
+            if (currentCategory) { categories.push(currentCategory); currentCategory = null; }
             continue;
         }
         if (!isSafeKey(name)) continue;
         if (name.toUpperCase() === 'TOTAL' || lowerName.includes('net income') || lowerName.includes('total monthly') || lowerName.includes('expense categorie')) continue;
-
         const monthlyValues: number[] = [];
         let hasData = false;
         let totalRowSum = 0;
-        
         for (let j = 1; j <= 12; j++) {
             const val = parseNumber(row[j]);
             monthlyValues.push(val);
             if (val !== 0) hasData = true;
             totalRowSum += val;
         }
-
         if (!hasData) {
-            if (currentCategory) {
-                categories.push(currentCategory);
-            }
+            if (currentCategory) categories.push(currentCategory);
             currentCategory = { name: name, subCategories: [], total: 0 };
         } else {
             const subItem: ExpenseSubCategory = { name, monthlyValues, total: totalRowSum };
-            if (currentCategory) {
-                currentCategory.subCategories.push(subItem);
-                currentCategory.total += totalRowSum;
-            } else {
-                categories.push({ name: name, subCategories: [subItem], total: totalRowSum });
-            }
+            if (currentCategory) { currentCategory.subCategories.push(subItem); currentCategory.total += totalRowSum; }
+            else { categories.push({ name: name, subCategories: [subItem], total: totalRowSum }); }
         }
     }
-
-    if (currentCategory && !categories.find(c => c.name === currentCategory?.name)) {
-        categories.push(currentCategory);
-    }
+    if (currentCategory && !categories.find(c => c.name === currentCategory?.name)) categories.push(currentCategory);
     return { months, categories };
 };
 
 // --- Legacy High-Level Parser ---
 const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
-    // ... (Existing implementation omitted for brevity, keeping it unchanged)
     const incomeEntries: IncomeEntry[] = [];
     const expenseEntries: ExpenseEntry[] = [];
     const parsedLines: { [index: number]: string[] } = {};
@@ -534,114 +446,62 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
     const expenseRows: { name: string; rowIndex: number }[] = [];
 
     for (let i = 0; i < lines.length; i++) {
-        if (!lines[i].trim()) continue; 
         const row = parseCSVLine(lines[i]);
         parsedLines[i] = row;
         const firstCell = (row[0] || '').trim();
         const lowerFirst = firstCell.toLowerCase();
-
         let dateCount = 0;
-        for (let c = 1; c < Math.min(row.length, 6); c++) {
-            if (parseFlexibleDate(row[c])) dateCount++;
-        }
-        if (dateCount >= 2) {
-            dateRowIndices.push(i);
-            continue;
-        }
-
+        for (let c = 1; c < Math.min(row.length, 6); c++) if (parseFlexibleDate(row[c])) dateCount++;
+        if (dateCount >= 2) { dateRowIndices.push(i); continue; }
         if (lowerFirst.includes('income') && !lowerFirst.includes('net')) {
              let hasData = false;
-             for (let c = 1; c < row.length; c++) {
-                 if (parseNumber(row[c]) !== 0) {
-                     hasData = true;
-                     break;
-                 }
-             }
+             for (let c = 1; c < row.length; c++) if (parseNumber(row[c]) !== 0) { hasData = true; break; }
              if (hasData) {
-                 const isTotal = lowerFirst.includes('total');
-                 const priority = isTotal ? 2 : 1;
-                 if (priority > bestIncomePriority) {
-                     bestIncomeRowIndex = i;
-                     bestIncomePriority = priority;
-                 } else if (priority === bestIncomePriority && bestIncomeRowIndex === -1) {
-                     bestIncomeRowIndex = i;
-                 }
+                 const priority = lowerFirst.includes('total') ? 2 : 1;
+                 if (priority > bestIncomePriority) { bestIncomeRowIndex = i; bestIncomePriority = priority; }
+                 else if (priority === bestIncomePriority && bestIncomeRowIndex === -1) bestIncomeRowIndex = i;
              }
              continue; 
         }
-
         if (lowerFirst && !lowerFirst.includes('net income') && !lowerFirst.includes('total') && !lowerFirst.includes('monthly savings') && !lowerFirst.includes('balance') && !lowerFirst.includes('expense categorie')) {
                let hasNumericData = false;
-               for(let c = 1; c < row.length; c++) {
-                   if (parseNumber(row[c]) !== 0) {
-                       hasNumericData = true;
-                       break;
-                   }
-               }
-               if (hasNumericData) {
-                   expenseRows.push({ name: firstCell, rowIndex: i });
-               }
+               for(let c = 1; c < row.length; c++) if (parseNumber(row[c]) !== 0) { hasNumericData = true; break; }
+               if (hasNumericData) expenseRows.push({ name: firstCell, rowIndex: i });
            }
     }
-
-    const incomeRowIndex = bestIncomeRowIndex;
     let incomeDateRowIndex = -1;
-    if (incomeRowIndex !== -1) {
-        for (let j = dateRowIndices.length - 1; j >= 0; j--) {
-            if (dateRowIndices[j] < incomeRowIndex) {
-                incomeDateRowIndex = dateRowIndices[j];
-                break;
-            }
-        }
+    if (bestIncomeRowIndex !== -1) {
+        for (let j = dateRowIndices.length - 1; j >= 0; j--) if (dateRowIndices[j] < bestIncomeRowIndex) { incomeDateRowIndex = dateRowIndices[j]; break; }
     }
-
-    if (incomeRowIndex !== -1 && incomeDateRowIndex !== -1) {
+    if (bestIncomeRowIndex !== -1 && incomeDateRowIndex !== -1) {
         const dateRow = parsedLines[incomeDateRowIndex];
-        const valRow = parsedLines[incomeRowIndex];
-        
+        const valRow = parsedLines[bestIncomeRowIndex];
         for (let c = 1; c < dateRow.length; c++) {
             if (c >= valRow.length) break;
-            const dateStr = dateRow[c];
-            const iso = parseFlexibleDate(dateStr);
+            const iso = parseFlexibleDate(dateRow[c]);
             const val = parseNumber(valRow[c]);
-            if (iso) {
-                incomeEntries.push({ date: iso, monthStr: dateStr, amount: val });
-            }
+            if (iso) incomeEntries.push({ date: iso, monthStr: dateRow[c], amount: val });
         }
     }
-
     if (expenseRows.length > 0 && dateRowIndices.length > 0) {
-        const expenseDateRowIndex = dateRowIndices[0];
-        const dateRow = parsedLines[expenseDateRowIndex];
-
+        const dateRow = parsedLines[dateRowIndices[0]];
         for (let c = 1; c < dateRow.length; c++) {
-            const dateStr = dateRow[c];
-            const iso = parseFlexibleDate(dateStr);
+            const iso = parseFlexibleDate(dateRow[c]);
             if (!iso) continue;
-
             const categories: Record<string, number> = {};
             let total = 0;
-
             expenseRows.forEach(exp => {
                 if (!isSafeKey(exp.name)) return;
                 const val = Math.abs(parseNumber(parsedLines[exp.rowIndex][c] || '0'));
                 categories[exp.name] = val;
                 total += val;
             });
-
-            if (total > 0) {
-                expenseEntries.push({ date: iso, monthStr: dateStr, categories, total });
-            }
+            if (total > 0) expenseEntries.push({ date: iso, monthStr: dateRow[c], categories, total });
         }
     }
-
-    const sortByDate = (a: IncomeEntry | ExpenseEntry, b: IncomeEntry | ExpenseEntry) => a.date.localeCompare(b.date);
-    return {
-        income: incomeEntries.sort(sortByDate),
-        expenses: expenseEntries.sort(sortByDate)
-    };
+    const sortByDate = (a: any, b: any) => a.date.localeCompare(b.date);
+    return { income: incomeEntries.sort(sortByDate), expenses: expenseEntries.sort(sortByDate) };
 };
-
 
 export const parseRawData = async <T,>(
   rawData: string,
@@ -652,33 +512,43 @@ export const parseRawData = async <T,>(
       if (dataType === 'detailedExpenses') return { months: [], categories: [] } as T;
       return [] as T;
   }
-
   const lines = rawData.split(/\r?\n/);
   if (lines.length < 2) {
       if (dataType === 'income') return { income: [], expenses: [] } as T;
       if (dataType === 'detailedExpenses') return { months: [], categories: [] } as T;
       return [] as T; 
   }
+  if (dataType === 'income') return parseIncomeAndExpenses(lines) as T;
+  if (dataType === 'detailedExpenses') return parseDetailedExpenses(lines) as T;
 
-  if (dataType === 'income') {
-      return parseIncomeAndExpenses(lines) as T;
-  }
+  // --- Robust Header Detection ---
+  let headerIndex = -1;
+  const keywords = HEADER_KEYWORDS[dataType] || [];
   
-  if (dataType === 'detailedExpenses') {
-      return parseDetailedExpenses(lines) as T;
-  }
+  for (let i = 0; i < Math.min(lines.length, 15); i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const rowValues = parseCSVLine(line).map(v => v.toLowerCase().trim());
+      
+      const nonEmptyCells = rowValues.filter(v => v !== '');
+      const hasEnoughCols = nonEmptyCells.length >= 2;
+      const hasKeyword = keywords.some(k => rowValues.some(v => v.includes(k)));
+      const isTitleRow = nonEmptyCells.length === 1;
 
-  let headerIndex = 0;
-  for (let i = 0; i < lines.length; i++) {
-      if (lines[i].trim().length > 0) {
+      if (hasEnoughCols && hasKeyword && !isTitleRow) {
           headerIndex = i;
           break;
       }
   }
 
+  if (headerIndex === -1) {
+      for (let i = 0; i < lines.length; i++) if (lines[i].trim().length > 0) { headerIndex = i; break; }
+  }
+  
+  if (headerIndex === -1) return [] as T;
+
   const originalHeaders = parseCSVLine(lines[headerIndex]);
   let parser: ((values: string[]) => any | null) | null = null;
-  
   switch(dataType) {
       case 'assets': parser = createAssetParser(originalHeaders); break;
       case 'investments': parser = createInvestmentParser(originalHeaders); break;
@@ -688,36 +558,24 @@ export const parseRawData = async <T,>(
       case 'logData': parser = createLogDataParser(originalHeaders); break;
       case 'debt': parser = createDebtParser(originalHeaders); break;
   }
-
   if (!parser) return [] as T;
 
   const results: any[] = [];
-  
   for (let i = headerIndex + 1; i < lines.length; i++) {
     if (dataType === 'debt' && lines[i].trim() === '' && lines[i+1]?.trim() === '') break;
-
-    const line = lines[i];
-    if (line.trim().length === 0) continue;
-
-    const values = parseCSVLine(line);
+    const values = parseCSVLine(lines[i]);
     if (values.every(v => v === '')) continue;
-    
     const parsedItem = parser(values);
     if (parsedItem) {
-        // --- NEW: Inject row index for Trades and Assets ---
-        // Google Sheets API deleteDimension is 0-based.
-        // We track the index in the original lines array to know where it resides in the CSV (and thus the sheet).
-        if (dataType === 'trades' || dataType === 'assets') {
+        if (['trades', 'assets', 'subscriptions', 'accounts'].includes(dataType)) {
             (parsedItem as any).rowIndex = i;
         }
         results.push(parsedItem);
     }
   }
-
   if (dataType === 'debt') {
       const loanItem = results.find((r: any) => r.name?.toLowerCase().includes('loan'));
       return (loanItem ? [loanItem] : []) as T;
   }
-
   return results as T;
 };

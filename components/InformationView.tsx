@@ -1,190 +1,229 @@
 
-import React, { useMemo, memo } from 'react';
+import React, { useMemo, memo, useState, useEffect } from 'react';
 import { Subscription, BankAccount, DebtEntry } from '../types';
-import { CreditCard, Landmark, Calendar, Tag, Loader2, TrendingDown, Flame } from 'lucide-react';
-import { formatBaseCurrency } from '../services/currencyService';
+import { CreditCard, Landmark, Calendar, Tag, Loader2, TrendingDown, Flame, Plus, Pencil, Trash2, X, Save } from 'lucide-react';
+import { formatBaseCurrency, PRIMARY_CURRENCY } from '../services/currencyService';
 
 interface InformationViewProps {
   subscriptions: Subscription[];
   accounts: BankAccount[];
   debtEntries?: DebtEntry[];
   isLoading?: boolean;
+  onAddSubscription?: (sub: Subscription) => Promise<void>;
+  onEditSubscription?: (sub: Subscription) => Promise<void>;
+  onDeleteSubscription?: (sub: Subscription) => Promise<void>;
+  onAddAccount?: (acc: BankAccount) => Promise<void>;
+  onEditAccount?: (acc: BankAccount) => Promise<void>;
+  onDeleteAccount?: (acc: BankAccount) => Promise<void>;
 }
 
-// --- Reusable Components ---
+// --- Modals ---
 
-const SectionHeader = ({ title, icon: Icon, color }: { title: string, icon: any, color: string }) => (
-    <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2 mb-4">
-        <Icon size={20} className={color} /> {title}
-    </h3>
-);
+const SubscriptionModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolean, onClose: () => void, onSave: (s: Subscription) => Promise<void>, initialData?: Subscription | null }) => {
+    const [formData, setFormData] = useState<Partial<Subscription>>({
+        name: '', cost: 0, period: 'Monthly', category: 'General', active: true, paymentMethod: ''
+    });
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-const EmptyRow = ({ colSpan, msg }: { colSpan: number, msg: string }) => (
-    <tr><td colSpan={colSpan} className="p-8 text-center text-slate-500">{msg}</td></tr>
-);
+    useEffect(() => {
+        if (isOpen && initialData) setFormData(initialData);
+        else if (isOpen) setFormData({ name: '', cost: 0, period: 'Monthly', category: 'General', active: true, paymentMethod: '' });
+    }, [isOpen, initialData]);
 
-// --- Section: Liabilities ---
+    if (!isOpen) return null;
 
-const DebtSection = memo(({ data, isLoading }: { data: DebtEntry[], isLoading: boolean }) => (
-    <div className="space-y-4 animate-fade-in">
-        <SectionHeader title="Liabilities & Debt" icon={TrendingDown} color="text-red-500 dark:text-red-400" />
-        <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                    <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Debt Name</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Interest Rate</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Monthly Payment</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Debt Owed</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                        {data.map((debt) => (
-                            <tr key={debt.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                                <td className="p-4 font-bold text-slate-900 dark:text-white text-lg">
-                                    {isLoading ? <div className="h-5 w-32 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse" /> : debt.name}
-                                </td>
-                                <td className="p-4 text-slate-600 dark:text-slate-300 font-medium">
-                                    {isLoading ? <div className="h-4 w-12 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse" /> : 
-                                        `${debt.interestRate > 1.0 ? debt.interestRate.toFixed(2) : (debt.interestRate * 100).toFixed(2)}%`
-                                    }
-                                </td>
-                                <td className="p-4 text-right font-medium text-red-500 dark:text-red-400">
-                                    {isLoading ? <div className="h-4 w-20 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse ml-auto" /> : formatBaseCurrency(debt.monthlyPayment)}
-                                </td>
-                                <td className="p-4 font-bold text-slate-900 dark:text-white text-lg text-right">
-                                    {isLoading ? <div className="h-5 w-24 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse ml-auto" /> : formatBaseCurrency(debt.amountOwed)}
-                                </td>
-                            </tr>
-                        ))}
-                        {data.length === 0 && <EmptyRow colSpan={4} msg="No debt records found." />}
-                    </tbody>
-                </table>
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        try {
+            await onSave({
+                ...formData as Subscription,
+                id: initialData?.id || crypto.randomUUID(),
+                rowIndex: initialData?.rowIndex
+            });
+            onClose();
+        } catch (e) { alert(e); }
+        finally { setIsSubmitting(false); }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+                    <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                        {initialData ? <Pencil size={18} /> : <Plus size={18} />}
+                        {initialData ? 'Edit Subscription' : 'New Subscription'}
+                    </h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-white"><X size={20} /></button>
+                </div>
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Service Name</label>
+                        <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" required />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Monthly Cost</label>
+                            <input type="number" step="any" value={formData.cost || ''} onChange={e => setFormData({...formData, cost: parseFloat(e.target.value)})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" required />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Frequency</label>
+                            <select value={formData.period} onChange={e => setFormData({...formData, period: e.target.value as any})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="Monthly">Monthly</option>
+                                <option value="Yearly">Yearly</option>
+                                <option value="Weekly">Weekly</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category</label>
+                        <input type="text" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. Entertainment, Software" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Payment Method</label>
+                        <input type="text" value={formData.paymentMethod} onChange={e => setFormData({...formData, paymentMethod: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. Visa 1234" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <input type="checkbox" checked={formData.active} onChange={e => setFormData({...formData, active: e.target.checked})} className="rounded text-blue-500" />
+                        <label className="text-xs font-bold text-slate-500 uppercase">Active Subscription</label>
+                    </div>
+                    <button type="submit" disabled={isSubmitting} className="w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50">
+                        {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                        {initialData ? 'Update' : 'Save'}
+                    </button>
+                </form>
             </div>
         </div>
-    </div>
-));
+    );
+};
 
-// --- Section: Subscriptions ---
+const AccountModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolean, onClose: () => void, onSave: (a: BankAccount) => Promise<void>, initialData?: BankAccount | null }) => {
+    const [formData, setFormData] = useState<Partial<BankAccount>>({
+        institution: '', name: '', type: 'Checking', paymentType: 'Card', accountNumber: '', transactionType: 'Debit', currency: PRIMARY_CURRENCY, purpose: ''
+    });
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-const SubscriptionSection = memo(({ data, isLoading }: { data: Subscription[], isLoading: boolean }) => (
-    <div className="space-y-4 animate-fade-in">
-        <SectionHeader title="Recurring Subscriptions" icon={CreditCard} color="text-purple-500 dark:text-purple-400" />
-        <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                    <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Service</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Category</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Frequency</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Cost</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Method</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                        {data.map((sub) => (
-                            <tr key={sub.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                                <td className="p-4 font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                    {sub.name}
-                                    {!sub.active && <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-500 dark:text-slate-400">Inactive</span>}
-                                </td>
-                                <td className="p-4 text-slate-600 dark:text-slate-300">
-                                    <span className="flex items-center gap-1 text-xs bg-slate-100 dark:bg-slate-700/50 px-2 py-1 rounded w-fit border border-slate-200 dark:border-slate-600/50">
-                                        <Tag size={12} /> {sub.category}
-                                    </span>
-                                </td>
-                                <td className="p-4 text-slate-600 dark:text-slate-300">
-                                    <span className="flex items-center gap-1">
-                                        <Calendar size={14} className="text-slate-500" /> {sub.period}
-                                    </span>
-                                </td>
-                                <td className="p-4 text-right font-medium text-slate-900 dark:text-white">
-                                    {isLoading ? <div className="h-4 w-16 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse ml-auto" /> : `$${sub.cost.toFixed(2)}`}
-                                </td>
-                                <td className="p-4 text-right text-slate-500 dark:text-slate-400 text-sm">
-                                    {sub.paymentMethod || '-'}
-                                </td>
-                            </tr>
-                        ))}
-                        {data.length === 0 && <EmptyRow colSpan={5} msg="No subscriptions found." />}
-                    </tbody>
-                </table>
+    useEffect(() => {
+        if (isOpen && initialData) setFormData(initialData);
+        else if (isOpen) setFormData({ institution: '', name: '', type: 'Checking', paymentType: 'Card', accountNumber: '', transactionType: 'Debit', currency: PRIMARY_CURRENCY, purpose: '' });
+    }, [isOpen, initialData]);
+
+    if (!isOpen) return null;
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        try {
+            await onSave({
+                ...formData as BankAccount,
+                id: initialData?.id || crypto.randomUUID(),
+                rowIndex: initialData?.rowIndex
+            });
+            onClose();
+        } catch (e) { alert(e); }
+        finally { setIsSubmitting(false); }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+                    <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                        {initialData ? <Pencil size={18} /> : <Plus size={18} />}
+                        {initialData ? 'Edit Account' : 'New Account'}
+                    </h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-white"><X size={20} /></button>
+                </div>
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Institution</label>
+                            <input type="text" value={formData.institution} onChange={e => setFormData({...formData, institution: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none" required />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Account Number</label>
+                            <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none" placeholder="e.g. Primary Checking" required />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Account Type</label>
+                            <input type="text" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none" placeholder="e.g. Checking, Savings" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Last 4 Digits</label>
+                            <input type="text" maxLength={4} value={formData.accountNumber} onChange={e => setFormData({...formData, accountNumber: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none font-mono" />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Method Type</label>
+                            <select value={formData.transactionType} onChange={e => setFormData({...formData, transactionType: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none">
+                                <option value="Debit">Debit</option>
+                                <option value="Credit">Credit</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Currency</label>
+                            <select value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none">
+                                <option value="CAD">CAD</option>
+                                <option value="USD">USD</option>
+                                <option value="EUR">EUR</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purpose / Note</label>
+                        <textarea value={formData.purpose} onChange={e => setFormData({...formData, purpose: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none min-h-[80px]" />
+                    </div>
+                    <button type="submit" disabled={isSubmitting} className="w-full mt-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50">
+                        {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                        {initialData ? 'Update Account' : 'Save Account'}
+                    </button>
+                </form>
             </div>
         </div>
-    </div>
-));
+    );
+};
 
-// --- Section: Accounts ---
+// --- View ---
 
-const AccountSection = memo(({ data, isLoading }: { data: BankAccount[], isLoading: boolean }) => (
-    <div className="space-y-4 animate-fade-in">
-        <SectionHeader title="Banking Accounts" icon={Landmark} color="text-emerald-500 dark:text-emerald-400" />
-        <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                    <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Institution</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Payment Method</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center">Type</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Purpose</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                        {data.map((acc) => {
-                             const isCredit = (acc.transactionType || '').toLowerCase().includes('credit');
-                             return (
-                                <tr key={acc.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                                    <td className="p-4 font-bold text-slate-900 dark:text-white">
-                                        {acc.institution}
-                                    </td>
-                                    <td className="p-4 text-slate-600 dark:text-slate-300">
-                                        <span className="flex items-center gap-2">
-                                            <CreditCard size={14} className="text-slate-500" />
-                                            {acc.paymentType || 'Card'}
-                                            {acc.accountNumber && acc.accountNumber !== '****' && (
-                                                <span className="text-slate-500 dark:text-slate-400 font-mono text-xs">•••• {acc.accountNumber}</span>
-                                            )}
-                                        </span>
-                                    </td>
-                                    <td className="p-4 text-center">
-                                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold border ${
-                                            isCredit 
-                                            ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20' 
-                                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                                        }`}>
-                                            {isCredit ? 'Credit' : 'Debit'}
-                                        </span>
-                                    </td>
-                                    <td className="p-4 text-right text-slate-500 dark:text-slate-300 text-sm max-w-xs truncate">
-                                        {isLoading ? <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse ml-auto" /> : acc.purpose}
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                        {data.length === 0 && <EmptyRow colSpan={4} msg="No bank accounts found." />}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-));
-
-export const InformationView: React.FC<InformationViewProps> = ({ subscriptions, accounts, debtEntries = [], isLoading = false }) => {
+export const InformationView: React.FC<InformationViewProps> = ({ 
+    subscriptions, accounts, debtEntries = [], isLoading = false,
+    onAddSubscription, onEditSubscription, onDeleteSubscription,
+    onAddAccount, onEditAccount, onDeleteAccount
+}) => {
+  const [editingSub, setEditingSub] = useState<Subscription | null>(null);
+  const [isAddingSub, setIsAddingSub] = useState(false);
+  const [editingAcc, setEditingAcc] = useState<BankAccount | null>(null);
+  const [isAddingAcc, setIsAddingAcc] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const totalMonthlyCost = useMemo(() => {
     const subCost = subscriptions.reduce((acc, sub) => {
         if (!sub.active) return acc;
         if (sub.period.toLowerCase() === 'monthly') return acc + sub.cost;
+        if (sub.period.toLowerCase() === 'yearly') return acc + (sub.cost / 12);
         return acc;
     }, 0);
-
     const debtCost = debtEntries.reduce((acc, debt) => acc + (debt.monthlyPayment || 0), 0);
-
     return subCost + debtCost;
   }, [subscriptions, debtEntries]);
+
+  const handleDeleteSub = async (sub: Subscription) => {
+      if (!onDeleteSubscription || !confirm(`Delete subscription "${sub.name}"?`)) return;
+      setDeletingId(sub.id);
+      try { await onDeleteSubscription(sub); } catch (e) { alert(e); }
+      finally { setDeletingId(null); }
+  };
+
+  const handleDeleteAcc = async (acc: BankAccount) => {
+      if (!onDeleteAccount || !confirm(`Delete account "${acc.institution} - ${acc.name}"?`)) return;
+      setDeletingId(acc.id);
+      try { await onDeleteAccount(acc); } catch (e) { alert(e); }
+      finally { setDeletingId(null); }
+  };
 
   return (
     <div className="space-y-12 animate-fade-in pb-20">
@@ -192,16 +231,12 @@ export const InformationView: React.FC<InformationViewProps> = ({ subscriptions,
         <div>
           <h2 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
             Information
-            {isLoading && <Loader2 className="animate-spin text-blue-500 dark:text-blue-400" size={24} />}
+            {isLoading && <Loader2 className="animate-spin text-blue-500" size={24} />}
           </h2>
           <p className="text-slate-500 dark:text-slate-400">Recurring expenses, liabilities, and account details.</p>
         </div>
-        
-        {/* Total Burn Card */}
         <div className="bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50 p-4 rounded-xl flex items-center gap-4 min-w-[240px] shadow-lg">
-             <div className="p-3 bg-red-500/10 rounded-lg text-red-500 dark:text-red-400">
-                <Flame size={24} />
-             </div>
+             <div className="p-3 bg-red-500/10 rounded-lg text-red-500"><Flame size={24} /></div>
              <div>
                  <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Total Monthly Burn</p>
                  <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
@@ -212,10 +247,117 @@ export const InformationView: React.FC<InformationViewProps> = ({ subscriptions,
       </header>
       
       <div className={`space-y-12 transition-all duration-500 ${isLoading ? 'opacity-70 pointer-events-none' : 'opacity-100'}`}>
-          <DebtSection data={debtEntries} isLoading={isLoading} />
-          <SubscriptionSection data={subscriptions} isLoading={isLoading} />
-          <AccountSection data={accounts} isLoading={isLoading} />
+          
+          {/* Liabilities */}
+          <div className="space-y-4">
+              <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2 mb-4">
+                  <TrendingDown size={20} className="text-red-500" /> Liabilities & Debt
+              </h3>
+              <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                        <tr>
+                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Debt Name</th>
+                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Owed</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {debtEntries.map(debt => (
+                            <tr key={debt.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                                <td className="p-4 font-bold text-slate-900 dark:text-white">{debt.name}</td>
+                                <td className="p-4 text-right font-bold text-red-500">{formatBaseCurrency(debt.amountOwed)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+              </div>
+          </div>
+
+          {/* Subscriptions */}
+          <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                  <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2">
+                      <CreditCard size={20} className="text-purple-500" /> Recurring Subscriptions
+                  </h3>
+                  {onAddSubscription && <button onClick={() => setIsAddingSub(true)} className="p-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors shadow-lg shadow-purple-500/20"><Plus size={18} /></button>}
+              </div>
+              <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                        <tr>
+                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Service</th>
+                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Cost</th>
+                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {subscriptions.map(sub => (
+                            <tr key={sub.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group">
+                                <td className="p-4">
+                                    <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                        {sub.name} {!sub.active && <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded text-slate-500">Inactive</span>}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500">{sub.category} • {sub.period}</div>
+                                </td>
+                                <td className="p-4 text-right font-medium text-slate-900 dark:text-white">{formatBaseCurrency(sub.cost)}</td>
+                                <td className="p-4 text-right">
+                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => setEditingSub(sub)} className="p-1.5 text-slate-400 hover:text-blue-500"><Pencil size={14} /></button>
+                                        <button onClick={() => handleDeleteSub(sub)} disabled={deletingId === sub.id} className="p-1.5 text-slate-400 hover:text-red-500">{deletingId === sub.id ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+              </div>
+          </div>
+
+          {/* Accounts */}
+          <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                  <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2">
+                      <Landmark size={20} className="text-emerald-500" /> Banking Accounts
+                  </h3>
+                  {onAddAccount && <button onClick={() => setIsAddingAcc(true)} className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20"><Plus size={18} /></button>}
+              </div>
+              <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                        <tr>
+                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Institution</th>
+                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Card / Method</th>
+                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {accounts.map(acc => (
+                            <tr key={acc.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group">
+                                <td className="p-4">
+                                    <div className="font-bold text-slate-900 dark:text-white">{acc.institution}</div>
+                                    <div className="text-[10px] text-slate-500">{acc.name} • {acc.type}</div>
+                                </td>
+                                <td className="p-4">
+                                    <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                        <CreditCard size={12} className="text-slate-400" /> {acc.paymentType} {acc.accountNumber && <span className="text-slate-400 font-mono">•••• {acc.accountNumber}</span>}
+                                    </div>
+                                </td>
+                                <td className="p-4 text-right">
+                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => setEditingAcc(acc)} className="p-1.5 text-slate-400 hover:text-blue-500"><Pencil size={14} /></button>
+                                        <button onClick={() => handleDeleteAcc(acc)} disabled={deletingId === acc.id} className="p-1.5 text-slate-400 hover:text-red-500">{deletingId === acc.id ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+              </div>
+          </div>
       </div>
+
+      <SubscriptionModal isOpen={isAddingSub || !!editingSub} initialData={editingSub} onClose={() => { setIsAddingSub(false); setEditingSub(null); }} onSave={async s => editingSub ? onEditSubscription?.(s) : onAddSubscription?.(s)} />
+      <AccountModal isOpen={isAddingAcc || !!editingAcc} initialData={editingAcc} onClose={() => { setIsAddingAcc(false); setEditingAcc(null); }} onSave={async a => editingAcc ? onEditAccount?.(a) : onAddAccount?.(a)} />
     </div>
   );
 };

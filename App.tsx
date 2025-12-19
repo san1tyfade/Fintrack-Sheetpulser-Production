@@ -15,7 +15,12 @@ import { fetchLiveRates } from './services/currencyService';
 import { reconcileInvestments } from './services/portfolioService';
 import { useIndexedDB } from './hooks/useIndexedDB';
 import { initGoogleAuth, isAuthInitialized } from './services/authService';
-import { addTradeToSheet, deleteRowFromSheet, updateTradeInSheet, addAssetToSheet, updateAssetInSheet } from './services/sheetWriteService';
+import { 
+  addTradeToSheet, deleteRowFromSheet, updateTradeInSheet, 
+  addAssetToSheet, updateAssetInSheet,
+  addSubscriptionToSheet, updateSubscriptionInSheet,
+  addAccountToSheet, updateAccountInSheet
+} from './services/sheetWriteService';
 import { Loader2 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -32,18 +37,13 @@ const DEFAULT_CONFIG: SheetConfig = {
     logData: 'logdata',
     debt: 'debt',
     income: 'Income',
-    expenses: 'Expense' // Dedicated tab for detailed spending analysis
+    expenses: 'Expense'
   }
 };
-
-const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 Hours
-
-// --- Main App Component ---
 
 function App() {
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
   
-  // Persistent Data State (IndexedDB)
   const [assets, setAssets] = useIndexedDB<Asset[]>('fintrack_assets', []);
   const [investments, setInvestments] = useIndexedDB<Investment[]>('fintrack_investments', []);
   const [trades, setTrades] = useIndexedDB<Trade[]>('fintrack_trades', []);
@@ -53,21 +53,13 @@ function App() {
   const [netWorthHistory, setNetWorthHistory] = useIndexedDB<NetWorthEntry[]>('fintrack_history', []);
   const [incomeData, setIncomeData] = useIndexedDB<IncomeEntry[]>('fintrack_income', []);
   const [expenseData, setExpenseData] = useIndexedDB<ExpenseEntry[]>('fintrack_expenses', []);
-  
-  // Detailed Expenses State
   const [detailedExpenses, setDetailedExpenses] = useIndexedDB<DetailedExpenseData>('fintrack_detailed_expenses', { months: [], categories: [] });
 
-  // Persistent Config State
   const [sheetConfig, setSheetConfig, configLoaded] = useIndexedDB<SheetConfig>('fintrack_sheet_config', DEFAULT_CONFIG);
   const [lastUpdatedStr, setLastUpdatedStr] = useIndexedDB<string | null>('fintrack_lastUpdated', null);
-  
-  // Persistent Sheet URL
   const [sheetUrl, setSheetUrl] = useIndexedDB<string>('fintrack_sheetUrl', '');
-
-  // Theme State
   const [isDarkMode, setIsDarkMode, themeLoaded] = useIndexedDB<boolean>('fintrack_dark_mode', true);
 
-  // Runtime State
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncingTabs, setSyncingTabs] = useState<Set<string>>(new Set());
   const [syncStatus, setSyncStatus] = useState<{type: 'success' | 'error', msg: string} | null>(null);
@@ -75,82 +67,45 @@ function App() {
 
   const lastUpdated = useMemo(() => lastUpdatedStr ? new Date(lastUpdatedStr) : null, [lastUpdatedStr]);
 
-  const calculatedInvestments = useMemo(() => {
-    return reconcileInvestments(investments, trades);
-  }, [investments, trades]);
+  const calculatedInvestments = useMemo(() => reconcileInvestments(investments, trades), [investments, trades]);
 
-  // Apply Theme Class
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    if (isDarkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
   }, [isDarkMode]);
 
   const toggleTheme = useCallback(() => setIsDarkMode(prev => !prev), [setIsDarkMode]);
 
-  // Initialize Global Services
   useEffect(() => {
-    const initRates = async () => {
-        const rates = await fetchLiveRates();
-        setExchangeRates(rates);
-    };
+    const initRates = async () => { setExchangeRates(await fetchLiveRates()); };
     initRates();
   }, []);
 
-  // Initialize Auth Client on Load if configured
   useEffect(() => {
-    if (sheetConfig.clientId && !isAuthInitialized() && window.google) {
-        initGoogleAuth(sheetConfig.clientId);
-    }
+    if (sheetConfig.clientId && !isAuthInitialized() && window.google) initGoogleAuth(sheetConfig.clientId);
   }, [sheetConfig.clientId]);
 
-  // Update config when URL input changes
   useEffect(() => {
     if (!configLoaded) return;
     const id = extractSheetId(sheetUrl);
-    if (id && id !== sheetConfig.sheetId) {
-        setSheetConfig(prev => ({ ...prev, sheetId: id }));
-    } else if (sheetConfig.sheetId && !sheetUrl) {
-        setSheetUrl(sheetConfig.sheetId);
-    }
-  }, [sheetUrl, sheetConfig.sheetId, setSheetConfig, configLoaded, setSheetUrl]);
+    if (id && id !== sheetConfig.sheetId) setSheetConfig(prev => ({ ...prev, sheetId: id }));
+  }, [sheetUrl, sheetConfig.sheetId, setSheetConfig, configLoaded]);
 
   const syncData = useCallback(async (specificTabs?: (keyof SheetConfig['tabNames'])[]) => {
     if (!sheetConfig.sheetId) return;
-
     setIsSyncing(true);
     setSyncStatus(null);
-    
-    // Determine what to sync
     const allKeys = Object.keys(sheetConfig.tabNames) as (keyof SheetConfig['tabNames'])[];
     const targets = specificTabs && specificTabs.length > 0 ? specificTabs : allKeys;
     const isFullSync = targets.length === allKeys.length;
-
-    setSyncingTabs(prev => {
-        const next = new Set(prev);
-        targets.forEach(t => next.add(t));
-        return next;
-    });
-    
-    // Helper to fetch and parse
-    const fetchSafe = async <T,>(tabName: string, type: 'assets' | 'investments' | 'trades' | 'subscriptions' | 'accounts' | 'logData' | 'debt' | 'income' | 'detailedExpenses'): Promise<T> => {
-        try {
-            const rawData = await fetchSheetData(sheetConfig.sheetId, tabName);
-            return await parseRawData<T>(rawData, type);
-        } catch (e) {
-            console.warn(`[Sync] ${type} failed for tab ${tabName}:`, e);
-            if (type === 'income') return { income: [], expenses: [] } as unknown as T;
-            if (type === 'detailedExpenses') return { months: [], categories: [] } as unknown as T;
-            return [] as unknown as T;
-        }
+    setSyncingTabs(prev => { const next = new Set(prev); targets.forEach(t => next.add(t)); return next; });
+    const fetchSafe = async <T,>(tabName: string, type: any): Promise<T> => {
+        try { const rawData = await fetchSheetData(sheetConfig.sheetId, tabName); return await parseRawData<T>(rawData, type); }
+        catch (e) { if (type === 'income') return { income: [], expenses: [] } as any; if (type === 'detailedExpenses') return { months: [], categories: [] } as any; return [] as any; }
     };
-
     const processKey = async (key: keyof SheetConfig['tabNames']) => {
         const tabName = sheetConfig.tabNames[key];
         if (!tabName) return;
-
         try {
             switch (key) {
                 case 'assets': setAssets(await fetchSafe<Asset[]>(tabName, 'assets')); break;
@@ -160,234 +115,54 @@ function App() {
                 case 'accounts': setAccounts(await fetchSafe(tabName, 'accounts')); break;
                 case 'logData': setNetWorthHistory(await fetchSafe(tabName, 'logData')); break;
                 case 'debt': setDebtEntries(await fetchSafe(tabName, 'debt')); break;
-                case 'income':
-                    const finData = await fetchSafe<IncomeAndExpenses>(tabName, 'income');
-                    setIncomeData(finData.income);
-                    setExpenseData(finData.expenses);
-                    break;
+                case 'income': const finData = await fetchSafe<IncomeAndExpenses>(tabName, 'income'); setIncomeData(finData.income); setExpenseData(finData.expenses); break;
                 case 'expenses': setDetailedExpenses(await fetchSafe(tabName, 'detailedExpenses')); break;
             }
-        } finally {
-            setSyncingTabs(prev => {
-                const next = new Set(prev);
-                next.delete(key);
-                return next;
-            });
-        }
+        } finally { setSyncingTabs(prev => { const next = new Set(prev); next.delete(key); return next; }); }
     };
-
-    try {
-        await Promise.all(targets.map(key => processKey(key)));
-        
-        const now = new Date();
-        if (isFullSync) {
-             setLastUpdatedStr(now.toISOString());
-             setSyncStatus({ type: 'success', msg: 'Full sync complete' });
-        } else {
-             setSyncStatus({ type: 'success', msg: 'Selected tabs updated' });
-        }
-
-    } catch (e: any) {
-        setSyncStatus({ type: 'error', msg: e.message || "Sync process failed" });
-    } finally {
-        setIsSyncing(false);
-    }
+    try { await Promise.all(targets.map(key => processKey(key))); setLastUpdatedStr(new Date().toISOString()); setSyncStatus({ type: 'success', msg: isFullSync ? 'Full sync complete' : 'Updated' }); }
+    catch (e: any) { setSyncStatus({ type: 'error', msg: e.message || "Sync failed" }); }
+    finally { setIsSyncing(false); }
   }, [sheetConfig, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setDebtEntries, setIncomeData, setExpenseData, setDetailedExpenses, setLastUpdatedStr]);
 
-  // --- Trade Handlers ---
+  // --- Handlers ---
 
-  const handleAddTrade = useCallback(async (newTrade: Trade) => {
-    if (!sheetConfig.sheetId || !sheetConfig.tabNames.trades) {
-        throw new Error("Cannot add trade: Trades tab not configured or Sheet ID missing.");
-    }
-    await addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, newTrade);
-    // For Adds, we generally want to sync to get the new Row ID, despite caching risk
-    await syncData(['trades']);
-  }, [sheetConfig, syncData]);
+  const handleDeleteGeneric = useCallback(async (item: any, tabName: string, setter: (val: any | ((prev: any[]) => any[])) => void) => {
+    if (!sheetConfig.sheetId || !tabName) throw new Error("Config missing.");
+    if (item.rowIndex === undefined) throw new Error("Row index missing. Please sync first.");
+    await deleteRowFromSheet(sheetConfig.sheetId, tabName, item.rowIndex);
+    setter(prev => prev.filter(i => i.id !== item.id).map(i => i.rowIndex !== undefined && i.rowIndex > item.rowIndex ? { ...i, rowIndex: i.rowIndex - 1 } : i));
+  }, [sheetConfig]);
 
-  const handleEditTrade = useCallback(async (trade: Trade) => {
-    if (!sheetConfig.sheetId || !sheetConfig.tabNames.trades) {
-        throw new Error("Cannot edit: Config missing.");
-    }
-    if (trade.rowIndex === undefined) {
-        throw new Error("Cannot edit: Row Index missing. Please sync to refresh data.");
-    }
-    
-    await updateTradeInSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, trade.rowIndex, trade);
-    
-    // Update local state directly to avoid caching issues
-    setTrades(prev => prev.map(t => t.id === trade.id ? trade : t));
-  }, [sheetConfig, setTrades]);
-
-  const handleDeleteTrade = useCallback(async (trade: Trade) => {
-      if (!sheetConfig.sheetId || !sheetConfig.tabNames.trades) {
-          throw new Error("Cannot delete: Config missing.");
-      }
-      if (trade.rowIndex === undefined) {
-          throw new Error("Cannot delete: Row Index missing (try syncing first).");
-      }
-      
-      await deleteRowFromSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, trade.rowIndex);
-      
-      // Update local state and adjust row indices for subsequent items
-      setTrades(prev => {
-          const deletedIndex = trade.rowIndex!;
-          return prev
-            .filter(t => t.id !== trade.id)
-            .map(t => {
-                if (t.rowIndex !== undefined && t.rowIndex > deletedIndex) {
-                    return { ...t, rowIndex: t.rowIndex - 1 };
-                }
-                return t;
-            });
-      });
-  }, [sheetConfig, setTrades]);
-
-  // --- Asset Handlers ---
-
-  const handleAddAsset = useCallback(async (newAsset: Asset) => {
-      if (!sheetConfig.sheetId || !sheetConfig.tabNames.assets) {
-          throw new Error("Cannot add asset: Assets tab not configured.");
-      }
-      await addAssetToSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, newAsset);
-      // For new assets, we do sync to retrieve the generated Row Index for future edits
-      await syncData(['assets']);
-  }, [sheetConfig, syncData]);
-
-  const handleEditAsset = useCallback(async (asset: Asset) => {
-      if (!sheetConfig.sheetId || !sheetConfig.tabNames.assets) {
-          throw new Error("Cannot edit: Config missing.");
-      }
-      if (asset.rowIndex === undefined) {
-          throw new Error("Cannot edit: Row Index missing. Please sync to refresh data.");
-      }
-      
-      // 1. Write to Sheet
-      await updateAssetInSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, asset.rowIndex, asset);
-      
-      // 2. Update Local State directly (skip sync to avoid stale cache)
-      setAssets(prev => prev.map(item => item.id === asset.id ? asset : item));
-      
-  }, [sheetConfig, setAssets]);
-
-  const handleDeleteAsset = useCallback(async (asset: Asset) => {
-      if (!sheetConfig.sheetId || !sheetConfig.tabNames.assets) {
-          throw new Error("Cannot delete: Config missing.");
-      }
-      if (asset.rowIndex === undefined) {
-          throw new Error("Cannot delete: Row Index missing. Please sync first.");
-      }
-      
-      await deleteRowFromSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, asset.rowIndex);
-      
-      // Update local state directly
-      setAssets(prev => {
-          const deletedIndex = asset.rowIndex!;
-          return prev
-            .filter(item => item.id !== asset.id)
-            .map(item => {
-                if (item.rowIndex !== undefined && item.rowIndex > deletedIndex) {
-                    return { ...item, rowIndex: item.rowIndex - 1 };
-                }
-                return item;
-            });
-      });
-  }, [sheetConfig, setAssets]);
-
-  if (!configLoaded || !themeLoaded) {
-      return (
-          <div className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-900 text-slate-400">
-              <Loader2 className="animate-spin" size={32} />
-          </div>
-      );
-  }
+  const handleEditGeneric = useCallback(async (item: any, tabName: string, updateFn: any, setter: (val: any | ((prev: any[]) => any[])) => void) => {
+    if (!sheetConfig.sheetId || !tabName) throw new Error("Config missing.");
+    if (item.rowIndex === undefined) throw new Error("Row index missing.");
+    await updateFn(sheetConfig.sheetId, tabName, item.rowIndex, item);
+    setter(prev => prev.map(i => i.id === item.id ? item : i));
+  }, [sheetConfig]);
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen font-sans">
-      <Navigation 
-        currentView={currentView} 
-        setView={setCurrentView} 
-        onSync={() => syncData()}
-        isSyncing={isSyncing}
-        lastUpdated={lastUpdated}
-        isDarkMode={isDarkMode}
-        toggleTheme={toggleTheme}
-      />
-      
-      <main className="flex-1 overflow-y-auto h-screen relative scroll-smooth bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
-        <div className="absolute top-0 left-0 w-full h-96 bg-blue-100 dark:bg-blue-900/10 -z-10 blur-3xl pointer-events-none transition-colors duration-300" />
-        
+      <Navigation currentView={currentView} setView={setCurrentView} onSync={() => syncData()} isSyncing={isSyncing} lastUpdated={lastUpdated} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
+      <main className="flex-1 overflow-y-auto h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
         <div className="max-w-7xl mx-auto p-6 md:p-12 mb-20 md:mb-0">
-          {currentView === ViewState.DASHBOARD && (
-            <Dashboard 
-                assets={assets}
-                netWorthHistory={netWorthHistory}
-                incomeData={incomeData}
-                expenseData={expenseData}
-                isLoading={isSyncing}
-                exchangeRates={exchangeRates}
-                isDarkMode={isDarkMode}
-            />
-          )}
-          {currentView === ViewState.ASSETS && (
-            <AssetsList 
-                assets={assets} 
-                isLoading={isSyncing} 
-                exchangeRates={exchangeRates}
-                onAddAsset={handleAddAsset}
-                onEditAsset={handleEditAsset}
-                onDeleteAsset={handleDeleteAsset}
-            />
-          )}
-          {currentView === ViewState.INVESTMENTS && (
-            <InvestmentsList 
-                investments={calculatedInvestments} 
-                assets={assets} 
-                trades={trades} 
-                isLoading={isSyncing}
-                exchangeRates={exchangeRates}
-            />
-          )}
-          {currentView === ViewState.TRADES && (
-            <TradesList 
-                trades={trades} 
-                isLoading={isSyncing} 
-                onAddTrade={handleAddTrade}
-                onEditTrade={handleEditTrade}
-                onDeleteTrade={handleDeleteTrade}
-            />
-          )}
-          {currentView === ViewState.INCOME && (
-            <IncomeView 
-              incomeData={incomeData}
-              expenseData={expenseData}
-              detailedExpenses={detailedExpenses}
-              isLoading={isSyncing}
-              isDarkMode={isDarkMode}
-            />
-          )}
+          {currentView === ViewState.DASHBOARD && <Dashboard assets={assets} netWorthHistory={netWorthHistory} incomeData={incomeData} expenseData={expenseData} isLoading={isSyncing} exchangeRates={exchangeRates} isDarkMode={isDarkMode} />}
+          {currentView === ViewState.ASSETS && <AssetsList assets={assets} isLoading={isSyncing} exchangeRates={exchangeRates} onAddAsset={a => addAssetToSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, a).then(() => syncData(['assets']))} onEditAsset={a => handleEditGeneric(a, sheetConfig.tabNames.assets, updateAssetInSheet, setAssets)} onDeleteAsset={a => handleDeleteGeneric(a, sheetConfig.tabNames.assets, setAssets)} />}
+          {currentView === ViewState.INVESTMENTS && <InvestmentsList investments={calculatedInvestments} assets={assets} trades={trades} isLoading={isSyncing} exchangeRates={exchangeRates} />}
+          {currentView === ViewState.TRADES && <TradesList trades={trades} isLoading={isSyncing} onAddTrade={t => addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, t).then(() => syncData(['trades']))} onEditTrade={t => handleEditGeneric(t, sheetConfig.tabNames.trades, updateTradeInSheet, setTrades)} onDeleteTrade={t => handleDeleteGeneric(t, sheetConfig.tabNames.trades, setTrades)} />}
+          {currentView === ViewState.INCOME && <IncomeView incomeData={incomeData} expenseData={expenseData} detailedExpenses={detailedExpenses} isLoading={isSyncing} isDarkMode={isDarkMode} />}
           {currentView === ViewState.INFORMATION && (
             <InformationView 
-              subscriptions={subscriptions} 
-              accounts={accounts} 
-              debtEntries={debtEntries}
-              isLoading={isSyncing} 
+              subscriptions={subscriptions} accounts={accounts} debtEntries={debtEntries} isLoading={isSyncing}
+              onAddSubscription={s => addSubscriptionToSheet(sheetConfig.sheetId, sheetConfig.tabNames.subscriptions, s).then(() => syncData(['subscriptions']))}
+              onEditSubscription={s => handleEditGeneric(s, sheetConfig.tabNames.subscriptions, updateSubscriptionInSheet, setSubscriptions)}
+              onDeleteSubscription={s => handleDeleteGeneric(s, sheetConfig.tabNames.subscriptions, setSubscriptions)}
+              onAddAccount={a => addAccountToSheet(sheetConfig.sheetId, sheetConfig.tabNames.accounts, a).then(() => syncData(['accounts']))}
+              onEditAccount={a => handleEditGeneric(a, sheetConfig.tabNames.accounts, updateAccountInSheet, setAccounts)}
+              onDeleteAccount={a => handleDeleteGeneric(a, sheetConfig.tabNames.accounts, setAccounts)}
             />
           )}
-          {currentView === ViewState.SETTINGS && (
-            <DataIngest 
-              config={sheetConfig}
-              onConfigChange={setSheetConfig}
-              onSync={syncData}
-              isSyncing={isSyncing}
-              syncingTabs={syncingTabs}
-              syncStatus={syncStatus}
-              sheetUrl={sheetUrl}
-              onSheetUrlChange={setSheetUrl}
-              isDarkMode={isDarkMode}
-              toggleTheme={toggleTheme}
-            />
-          )}
+          {currentView === ViewState.SETTINGS && <DataIngest config={sheetConfig} onConfigChange={setSheetConfig} onSync={syncData} isSyncing={isSyncing} syncingTabs={syncingTabs} syncStatus={syncStatus} sheetUrl={sheetUrl} onSheetUrlChange={setSheetUrl} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />}
         </div>
       </main>
     </div>

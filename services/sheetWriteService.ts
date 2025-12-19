@@ -1,6 +1,6 @@
 
 import { getAccessToken } from './authService';
-import { Trade, Asset } from '../types';
+import { Trade, Asset, Subscription, BankAccount } from '../types';
 
 const BASE_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
 
@@ -9,251 +9,178 @@ const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 // --- Mapping Logic ---
 
+const setCellValue = (row: any[], headers: string[], keys: string[], val: string | number | boolean) => {
+    const h = headers.map(normalize);
+    let idx = h.findIndex((header, i) => row[i] === null && keys.some(k => header === k));
+    if (idx === -1) {
+        idx = h.findIndex((header, i) => row[i] === null && keys.some(k => header.includes(k)));
+    }
+    if (idx !== -1) {
+         row[idx] = val;
+    }
+};
+
 const mapTradeToRow = (trade: Trade, headers: string[]) => {
     const row = new Array(headers.length).fill(null);
-    const h = headers.map(normalize);
-
-    const setVal = (keys: string[], val: string | number) => {
-        let idx = h.findIndex((header, i) => row[i] === null && keys.some(k => header === k));
-        if (idx === -1) {
-            idx = h.findIndex((header, i) => row[i] === null && keys.some(k => header.includes(k)));
-        }
-        if (idx !== -1) {
-             row[idx] = val;
-        }
-    };
-    
-    setVal(['date', 'time', 'day'], trade.date);
-    setVal(['ticker', 'symbol', 'code', 'asset'], trade.ticker);
-    setVal(['quantity', 'qty', 'units', 'shares', 'count', 'amount'], trade.quantity);
-    setVal(['total', 'value', 'net', 'settlement'], trade.total); 
-    setVal(['price', 'cost', 'rate', 'unitprice'], trade.price);
-    setVal(['type', 'action', 'side', 'direction'], trade.type);
-    setVal(['fee', 'commission', 'transaction', 'charge'], trade.fee || 0);
-
+    setCellValue(row, headers, ['date', 'time', 'day'], trade.date);
+    setCellValue(row, headers, ['ticker', 'symbol', 'code', 'asset'], trade.ticker);
+    setCellValue(row, headers, ['quantity', 'qty', 'units', 'shares', 'count', 'amount'], trade.quantity);
+    setCellValue(row, headers, ['total', 'value', 'net', 'settlement'], trade.total); 
+    setCellValue(row, headers, ['price', 'cost', 'rate', 'unitprice'], trade.price);
+    setCellValue(row, headers, ['type', 'action', 'side', 'direction'], trade.type);
+    setCellValue(row, headers, ['fee', 'commission', 'transaction', 'charge'], trade.fee || 0);
     return row;
 };
 
 const mapAssetToRow = (asset: Asset, headers: string[]) => {
     const row = new Array(headers.length).fill(null);
-    const h = headers.map(normalize);
+    setCellValue(row, headers, ['type', 'category', 'class', 'asset type', 'kind'], asset.type);
+    setCellValue(row, headers, ['name', 'account', 'item', 'description', 'holding', 'security', 'asset'], asset.name);
+    setCellValue(row, headers, ['value', 'amount', 'balance', 'current value', 'market value', 'total', 'market val'], asset.value);
+    setCellValue(row, headers, ['currency', 'curr', 'ccy'], asset.currency);
+    setCellValue(row, headers, ['last updated', 'date', 'updated', 'as of'], asset.lastUpdated || new Date().toISOString().split('T')[0]);
+    return row;
+};
 
-    const setVal = (keys: string[], val: string | number) => {
-        let idx = h.findIndex((header, i) => row[i] === null && keys.some(k => header === k));
-        if (idx === -1) {
-            idx = h.findIndex((header, i) => row[i] === null && keys.some(k => header.includes(k)));
-        }
-        if (idx !== -1) {
-             row[idx] = val;
-        }
-    };
+const mapSubscriptionToRow = (sub: Subscription, headers: string[]) => {
+    const row = new Array(headers.length).fill(null);
+    setCellValue(row, headers, ['name', 'service', 'subscription', 'item', 'merchant', 'description'], sub.name);
+    setCellValue(row, headers, ['cost', 'price', 'amount', 'monthly cost', 'value', 'payment'], sub.cost);
+    setCellValue(row, headers, ['period', 'frequency', 'billing cycle'], sub.period);
+    setCellValue(row, headers, ['category', 'type', 'kind'], sub.category);
+    setCellValue(row, headers, ['active', 'status'], sub.active ? 'TRUE' : 'FALSE');
+    setCellValue(row, headers, ['payment method', 'account', 'card', 'source'], sub.paymentMethod || '');
+    return row;
+};
 
-    // PRIORITIZE TYPE: "Category" or "Type" headers are specific. 
-    // We must map this first so that the "Name" mapping doesn't accidentally grab "Asset Category" 
-    // simply because it contains the word "Asset".
-    setVal(['type', 'category', 'class', 'asset type', 'kind'], asset.type);
-
-    // Map Name second. 
-    // Note: We include 'asset' here as a fallback for headers like "Asset", 
-    // but since Type runs first, "Asset Category" should already be filled.
-    setVal(['name', 'account', 'item', 'description', 'holding', 'security', 'asset'], asset.name);
-    
-    setVal(['value', 'amount', 'balance', 'current value', 'market value', 'total', 'market val'], asset.value);
-    setVal(['currency', 'curr', 'ccy'], asset.currency);
-    setVal(['last updated', 'date', 'updated', 'as of'], asset.lastUpdated || new Date().toISOString().split('T')[0]);
-
+const mapAccountToRow = (acc: BankAccount, headers: string[]) => {
+    const row = new Array(headers.length).fill(null);
+    setCellValue(row, headers, ['institution', 'bank', 'provider', 'source'], acc.institution);
+    setCellValue(row, headers, ['name', 'account name', 'nickname', 'label', 'account'], acc.name);
+    setCellValue(row, headers, ['type', 'category', 'account type'], acc.type);
+    setCellValue(row, headers, ['payment type', 'method', 'network', 'card type'], acc.paymentType);
+    setCellValue(row, headers, ['account number', 'number', 'last 4', 'card number'], acc.accountNumber);
+    setCellValue(row, headers, ['transaction type', 'class'], acc.transactionType);
+    setCellValue(row, headers, ['currency', 'curr', 'ccy'], acc.currency);
+    setCellValue(row, headers, ['purpose', 'description', 'usage', 'merchant'], acc.purpose);
     return row;
 };
 
 // --- API Helpers ---
 
 const fetchHeaders = async (sheetId: string, tabName: string, token: string) => {
-    const range = encodeURIComponent(`${tabName}!A1:Z1`);
+    // We search Row 1 and Row 2 to find headers more robustly
+    const range = encodeURIComponent(`${tabName}!A1:Z2`);
     const headerRes = await fetch(`${BASE_URL}/${sheetId}/values/${range}`, {
         headers: { Authorization: `Bearer ${token}` }
     });
     
-    if (!headerRes.ok) {
-        if (headerRes.status === 403 || headerRes.status === 401) {
-            throw new Error("Permission denied. Ensure 'Google Sheets API' is enabled.");
-        }
-        if (headerRes.status === 400) {
-            throw new Error(`Could not find the tab '${tabName}'.`);
-        }
-        throw new Error("Failed to fetch sheet headers.");
-    }
-
+    if (!headerRes.ok) throw new Error(`Could not find headers in tab '${tabName}'.`);
     const headerJson = await headerRes.json();
-    const headers = headerJson.values?.[0];
+    
+    // Heuristic: Select row with most non-empty values as header row
+    const rows = headerJson.values || [];
+    if (rows.length === 0) throw new Error(`Tab '${tabName}' is empty.`);
+    
+    const bestRow = rows.reduce((best: string[], current: string[]) => 
+        (current.filter(v => v).length > best.filter(v => v).length) ? current : best, rows[0]);
 
-    if (!headers || headers.length === 0) {
-        throw new Error(`The '${tabName}' tab appears to be empty or missing headers in Row 1.`);
-    }
-    return headers;
+    return bestRow;
 };
 
 const getSheetGridId = async (spreadsheetId: string, tabName: string, token: string): Promise<number> => {
     const res = await fetch(`${BASE_URL}/${spreadsheetId}?fields=sheets.properties`, {
         headers: { Authorization: `Bearer ${token}` }
     });
-
     if (!res.ok) throw new Error("Failed to fetch Spreadsheet metadata.");
-
     const data = await res.json();
     const sheet = data.sheets?.find((s: any) => s.properties?.title === tabName);
-
     if (!sheet) throw new Error(`Could not find tab named '${tabName}' in metadata.`);
-
     return sheet.properties.sheetId;
+};
+
+// --- Generic Row Operations ---
+
+const appendToSheet = async (sheetId: string, tabName: string, rowValues: any[]) => {
+    const token = getAccessToken();
+    if (!token) throw new Error("Authentication required.");
+    const range = encodeURIComponent(`${tabName}!A1`);
+    const res = await fetch(`${BASE_URL}/${sheetId}/values/${range}:append?valueInputOption=USER_ENTERED`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [rowValues] })
+    });
+    if (!res.ok) throw new Error("Failed to append row.");
+    return true;
+};
+
+const updateRowInSheet = async (sheetId: string, tabName: string, rowIndex: number, rowValues: any[]) => {
+    const token = getAccessToken();
+    if (!token) throw new Error("Authentication required.");
+    const rowNumber = rowIndex + 1;
+    const range = encodeURIComponent(`${tabName}!A${rowNumber}`);
+    const res = await fetch(`${BASE_URL}/${sheetId}/values/${range}?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [rowValues] })
+    });
+    if (!res.ok) throw new Error("Failed to update row.");
+    return true;
 };
 
 // --- Exports ---
 
 export const addTradeToSheet = async (sheetId: string, tabName: string, trade: Trade) => {
-    const token = getAccessToken();
-    if (!token) throw new Error("Authentication required.");
-
-    const headers = await fetchHeaders(sheetId, tabName, token);
-    const rowValues = mapTradeToRow(trade, headers);
-
-    const appendRange = encodeURIComponent(`${tabName}!A1`);
-    const appendRes = await fetch(`${BASE_URL}/${sheetId}/values/${appendRange}:append?valueInputOption=USER_ENTERED`, {
-        method: 'POST',
-        headers: { 
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ values: [rowValues] })
-    });
-
-    if (!appendRes.ok) {
-        const err = await appendRes.json();
-        throw new Error(err.error?.message || "Failed to write data.");
-    }
-
-    return true;
-};
-
-export const addAssetToSheet = async (sheetId: string, tabName: string, asset: Asset) => {
-    const token = getAccessToken();
-    if (!token) throw new Error("Authentication required.");
-
-    const headers = await fetchHeaders(sheetId, tabName, token);
-    const rowValues = mapAssetToRow(asset, headers);
-
-    const appendRange = encodeURIComponent(`${tabName}!A1`);
-    const appendRes = await fetch(`${BASE_URL}/${sheetId}/values/${appendRange}:append?valueInputOption=USER_ENTERED`, {
-        method: 'POST',
-        headers: { 
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ values: [rowValues] })
-    });
-
-    if (!appendRes.ok) {
-        const err = await appendRes.json();
-        throw new Error(err.error?.message || "Failed to write asset data.");
-    }
-
-    return true;
+    const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
+    return appendToSheet(sheetId, tabName, mapTradeToRow(trade, headers));
 };
 
 export const updateTradeInSheet = async (sheetId: string, tabName: string, rowIndex: number, trade: Trade) => {
-    const token = getAccessToken();
-    if (!token) throw new Error("Authentication required.");
+    const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
+    return updateRowInSheet(sheetId, tabName, rowIndex, mapTradeToRow(trade, headers));
+};
 
-    const headers = await fetchHeaders(sheetId, tabName, token);
-    const rowValues = mapTradeToRow(trade, headers);
-    const rowNumber = rowIndex + 1;
-    const updateRange = encodeURIComponent(`${tabName}!A${rowNumber}`);
-
-    const updateRes = await fetch(`${BASE_URL}/${sheetId}/values/${updateRange}?valueInputOption=USER_ENTERED`, {
-        method: 'PUT',
-        headers: { 
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ values: [rowValues] })
-    });
-
-    if (!updateRes.ok) {
-        const err = await updateRes.json();
-        throw new Error(err.error?.message || "Failed to update row.");
-    }
-
-    return true;
+export const addAssetToSheet = async (sheetId: string, tabName: string, asset: Asset) => {
+    const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
+    return appendToSheet(sheetId, tabName, mapAssetToRow(asset, headers));
 };
 
 export const updateAssetInSheet = async (sheetId: string, tabName: string, rowIndex: number, asset: Asset) => {
-    const token = getAccessToken();
-    if (!token) throw new Error("Authentication required.");
-
-    const headers = await fetchHeaders(sheetId, tabName, token);
-    const rowValues = mapAssetToRow(asset, headers);
-    const rowNumber = rowIndex + 1;
-    const updateRange = encodeURIComponent(`${tabName}!A${rowNumber}`);
-
-    const updateRes = await fetch(`${BASE_URL}/${sheetId}/values/${updateRange}?valueInputOption=USER_ENTERED`, {
-        method: 'PUT',
-        headers: { 
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ values: [rowValues] })
-    });
-
-    if (!updateRes.ok) {
-        const err = await updateRes.json();
-        throw new Error(err.error?.message || "Failed to update asset row.");
-    }
-
-    return true;
+    const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
+    return updateRowInSheet(sheetId, tabName, rowIndex, mapAssetToRow(asset, headers));
 };
 
-// Generic Delete Function (used for both Trades and Assets)
+export const addSubscriptionToSheet = async (sheetId: string, tabName: string, sub: Subscription) => {
+    const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
+    return appendToSheet(sheetId, tabName, mapSubscriptionToRow(sub, headers));
+};
+
+export const updateSubscriptionInSheet = async (sheetId: string, tabName: string, rowIndex: number, sub: Subscription) => {
+    const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
+    return updateRowInSheet(sheetId, tabName, rowIndex, mapSubscriptionToRow(sub, headers));
+};
+
+export const addAccountToSheet = async (sheetId: string, tabName: string, acc: BankAccount) => {
+    const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
+    return appendToSheet(sheetId, tabName, mapAccountToRow(acc, headers));
+};
+
+export const updateAccountInSheet = async (sheetId: string, tabName: string, rowIndex: number, acc: BankAccount) => {
+    const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
+    return updateRowInSheet(sheetId, tabName, rowIndex, mapAccountToRow(acc, headers));
+};
+
 export const deleteRowFromSheet = async (sheetId: string, tabName: string, rowIndex: number) => {
     const token = getAccessToken();
     if (!token) throw new Error("Authentication required.");
-
-    if (rowIndex === undefined || rowIndex < 1) {
-        throw new Error("Invalid Row Index.");
-    }
-
     const gridId = await getSheetGridId(sheetId, tabName, token);
-
-    const batchUpdateRequest = {
-        requests: [
-            {
-                deleteDimension: {
-                    range: {
-                        sheetId: gridId,
-                        dimension: "ROWS",
-                        startIndex: rowIndex,
-                        endIndex: rowIndex + 1
-                    }
-                }
-            }
-        ]
-    };
-
     const res = await fetch(`${BASE_URL}/${sheetId}:batchUpdate`, {
         method: 'POST',
-        headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(batchUpdateRequest)
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            requests: [{ deleteDimension: { range: { sheetId: gridId, dimension: "ROWS", startIndex: rowIndex, endIndex: rowIndex + 1 } } }]
+        })
     });
-
-    if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error?.message || "Failed to delete row.");
-    }
-
+    if (!res.ok) throw new Error("Failed to delete row.");
     return true;
 };
-
-// Alias for backward compatibility if needed, though we will update usages
-export const deleteTradeFromSheet = deleteRowFromSheet;
-export const deleteAssetFromSheet = deleteRowFromSheet;
