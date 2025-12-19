@@ -49,15 +49,8 @@ const mapTradeToRow = (trade: Trade, headers: string[]) => {
     return row;
 };
 
-export const addTradeToSheet = async (sheetId: string, tabName: string, trade: Trade) => {
-    const token = getAccessToken();
-    if (!token) {
-        throw new Error("Authentication required. Please go to Settings and click 'Test Authentication' to sign in.");
-    }
-
-    // 1. Fetch current headers to ensure mapping is perfect
-    // We strictly fetch row 1.
-    // Encode the range to handle spaces or special characters in tab names safely
+// Common function to fetch headers and validate
+const fetchHeaders = async (sheetId: string, tabName: string, token: string) => {
     const range = encodeURIComponent(`${tabName}!A1:Z1`);
     const headerRes = await fetch(`${BASE_URL}/${sheetId}/values/${range}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -83,12 +76,16 @@ export const addTradeToSheet = async (sheetId: string, tabName: string, trade: T
             `Date, Ticker, Type, Quantity, Price, Total`
         );
     }
+    return headers;
+};
 
-    // 2. Map data to the discovered structure
+export const addTradeToSheet = async (sheetId: string, tabName: string, trade: Trade) => {
+    const token = getAccessToken();
+    if (!token) throw new Error("Authentication required.");
+
+    const headers = await fetchHeaders(sheetId, tabName, token);
     const rowValues = mapTradeToRow(trade, headers);
 
-    // 3. Append to the sheet
-    // valueInputOption=USER_ENTERED allows sheets to parse dates and numbers automatically
     const appendRange = encodeURIComponent(`${tabName}!A1`);
     const appendRes = await fetch(`${BASE_URL}/${sheetId}/values/${appendRange}:append?valueInputOption=USER_ENTERED`, {
         method: 'POST',
@@ -96,9 +93,7 @@ export const addTradeToSheet = async (sheetId: string, tabName: string, trade: T
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ 
-            values: [rowValues] 
-        })
+        body: JSON.stringify({ values: [rowValues] })
     });
 
     if (!appendRes.ok) {
@@ -109,12 +104,44 @@ export const addTradeToSheet = async (sheetId: string, tabName: string, trade: T
     return true;
 };
 
-// --- NEW Deletion Logic ---
+export const updateTradeInSheet = async (sheetId: string, tabName: string, rowIndex: number, trade: Trade) => {
+    const token = getAccessToken();
+    if (!token) throw new Error("Authentication required.");
 
-/**
- * Gets the numeric sheetId (gid) required for batchUpdate operations.
- * The Tab Name string is not enough for deleting rows.
- */
+    // 1. Fetch headers to ensure we map the updated data to the correct columns
+    const headers = await fetchHeaders(sheetId, tabName, token);
+    
+    // 2. Map data
+    const rowValues = mapTradeToRow(trade, headers);
+
+    // 3. Update specific row
+    // rowIndex comes from the CSV parser which is 0-based. 
+    // Sheet API A1 notation is 1-based.
+    // If rowIndex is 1 (first data row), we want A2.
+    const rowNumber = rowIndex + 1;
+    const updateRange = encodeURIComponent(`${tabName}!A${rowNumber}`);
+
+    const updateRes = await fetch(`${BASE_URL}/${sheetId}/values/${updateRange}?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+            values: [rowValues] 
+        })
+    });
+
+    if (!updateRes.ok) {
+        const err = await updateRes.json();
+        throw new Error(err.error?.message || "Failed to update row in Google Sheets.");
+    }
+
+    return true;
+};
+
+// --- Deletion Logic ---
+
 const getSheetGridId = async (spreadsheetId: string, tabName: string, token: string): Promise<number> => {
     const res = await fetch(`${BASE_URL}/${spreadsheetId}?fields=sheets.properties`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -136,20 +163,14 @@ const getSheetGridId = async (spreadsheetId: string, tabName: string, token: str
 
 export const deleteTradeFromSheet = async (sheetId: string, tabName: string, rowIndex: number) => {
     const token = getAccessToken();
-    if (!token) {
-        throw new Error("Authentication required.");
-    }
+    if (!token) throw new Error("Authentication required.");
 
     if (rowIndex === undefined || rowIndex < 1) {
         throw new Error("Invalid Row Index. Cannot delete header or unknown row.");
     }
 
-    // 1. Get Grid ID
     const gridId = await getSheetGridId(sheetId, tabName, token);
 
-    // 2. Construct Batch Update Request
-    // deleteDimension deletes the row and shifts everything up.
-    // startIndex is inclusive, endIndex is exclusive.
     const batchUpdateRequest = {
         requests: [
             {
@@ -165,7 +186,6 @@ export const deleteTradeFromSheet = async (sheetId: string, tabName: string, row
         ]
     };
 
-    // 3. Send Request
     const res = await fetch(`${BASE_URL}/${sheetId}:batchUpdate`, {
         method: 'POST',
         headers: {

@@ -1,18 +1,19 @@
 
 import React, { useMemo, useState, memo } from 'react';
 import { Trade } from '../types';
-import { History, TrendingUp, TrendingDown, Search, X, Loader2, Calendar, DollarSign, Hash, Plus, Save, Trash2 } from 'lucide-react';
+import { History, TrendingUp, TrendingDown, Search, X, Loader2, Calendar, DollarSign, Hash, Plus, Save, Trash2, Pencil } from 'lucide-react';
 
 interface TradesListProps {
   trades: Trade[];
   isLoading?: boolean;
   onAddTrade: (trade: Trade) => Promise<void>;
+  onEditTrade?: (trade: Trade) => Promise<void>;
   onDeleteTrade?: (trade: Trade) => Promise<void>;
 }
 
 // --- Sub-Component: AddTradeModal ---
 
-const AddTradeModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: () => void, onSave: (t: Trade) => Promise<void> }) => {
+const AddTradeModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolean, onClose: () => void, onSave: (t: Trade) => Promise<void>, initialData?: Trade | null }) => {
     const [formData, setFormData] = useState<Partial<Trade>>({
         date: new Date().toISOString().split('T')[0],
         type: 'BUY',
@@ -21,6 +22,31 @@ const AddTradeModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: 
         price: 0,
         fee: 0
     });
+    
+    // Load initial data when opening for edit
+    React.useEffect(() => {
+        if (isOpen && initialData) {
+            setFormData({
+                date: initialData.date,
+                type: initialData.type,
+                ticker: initialData.ticker,
+                quantity: initialData.quantity,
+                price: initialData.price,
+                fee: initialData.fee || 0
+            });
+        } else if (isOpen && !initialData) {
+            // Reset if opening for Add
+            setFormData({
+                date: new Date().toISOString().split('T')[0],
+                type: 'BUY',
+                ticker: '',
+                quantity: 0,
+                price: 0,
+                fee: 0
+            });
+        }
+    }, [isOpen, initialData]);
+
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -39,7 +65,8 @@ const AddTradeModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: 
         setIsSubmitting(true);
         try {
             const newTrade: Trade = {
-                id: crypto.randomUUID(), // Local ID until sync
+                id: initialData?.id || crypto.randomUUID(),
+                rowIndex: initialData?.rowIndex, // Preserve row index for edits
                 date: formData.date!,
                 ticker: formData.ticker.toUpperCase(),
                 type: formData.type as 'BUY' | 'SELL',
@@ -50,8 +77,6 @@ const AddTradeModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: 
             };
             await onSave(newTrade);
             onClose();
-            // Reset form slightly but keep date
-            setFormData(prev => ({ ...prev, ticker: '', quantity: 0, price: 0, fee: 0 }));
         } catch (err: any) {
             setError(err.message || "Failed to save trade.");
         } finally {
@@ -64,7 +89,8 @@ const AddTradeModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: 
             <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
                     <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
-                        <Plus size={18} className="text-blue-500" /> New Trade
+                        {initialData ? <Pencil size={18} className="text-blue-500" /> : <Plus size={18} className="text-blue-500" />}
+                        {initialData ? 'Edit Trade' : 'New Trade'}
                     </h3>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
                         <X size={20} />
@@ -179,7 +205,7 @@ const AddTradeModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: 
                         className="w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                         {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                        {isSubmitting ? 'Saving to Sheet...' : 'Save Transaction'}
+                        {isSubmitting ? 'Saving...' : (initialData ? 'Update Trade' : 'Save Transaction')}
                     </button>
                 </form>
             </div>
@@ -189,7 +215,7 @@ const AddTradeModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: 
 
 // --- Sub-Component: TradeGroup (Memoized) ---
 
-const TradeGroup = memo(({ ticker, trades, isLoading, onDelete }: { ticker: string, trades: Trade[], isLoading: boolean, onDelete?: (t: Trade) => Promise<void> }) => {
+const TradeGroup = memo(({ ticker, trades, isLoading, onDelete, onEdit }: { ticker: string, trades: Trade[], isLoading: boolean, onDelete?: (t: Trade) => Promise<void>, onEdit: (t: Trade) => void }) => {
     
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -270,7 +296,7 @@ const TradeGroup = memo(({ ticker, trades, isLoading, onDelete }: { ticker: stri
                                 <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right"><span className="flex items-center gap-1 justify-end"><Hash size={12}/> Qty</span></th>
                                 <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right"><span className="flex items-center gap-1 justify-end"><DollarSign size={12}/> Price</span></th>
                                 <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Total Value</th>
-                                <th className="p-4 w-10"></th>
+                                <th className="p-4 w-24 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -278,7 +304,7 @@ const TradeGroup = memo(({ ticker, trades, isLoading, onDelete }: { ticker: stri
                                 const isBuy = (trade.type || 'BUY').trim().toUpperCase() === 'BUY';
                                 const dateObj = new Date(trade.date);
                                 const dateDisplay = isNaN(dateObj.getTime()) ? trade.date : dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-                                const canDelete = trade.rowIndex !== undefined && onDelete;
+                                const canEdit = trade.rowIndex !== undefined;
                                 const isDeleting = deletingId === trade.id;
 
                                 return (
@@ -304,16 +330,28 @@ const TradeGroup = memo(({ ticker, trades, isLoading, onDelete }: { ticker: stri
                                             {isLoading ? <div className="h-4 w-20 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse ml-auto" /> : `$${Math.abs(trade.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                                         </td>
                                         <td className="p-4 text-right">
-                                            {canDelete && (
-                                                <button 
-                                                    onClick={() => handleDeleteClick(trade)}
-                                                    disabled={isDeleting || isLoading}
-                                                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors opacity-0 group-hover/row:opacity-100 disabled:opacity-50"
-                                                    title="Delete Trade from Sheet"
-                                                >
-                                                    {isDeleting ? <Loader2 size={14} className="animate-spin text-red-500" /> : <Trash2 size={14} />}
-                                                </button>
-                                            )}
+                                            <div className="flex justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                                {canEdit && (
+                                                     <button 
+                                                        onClick={() => onEdit(trade)}
+                                                        disabled={isDeleting || isLoading}
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors disabled:opacity-50"
+                                                        title="Edit Trade"
+                                                    >
+                                                        <Pencil size={14} />
+                                                    </button>
+                                                )}
+                                                {canEdit && onDelete && (
+                                                    <button 
+                                                        onClick={() => handleDeleteClick(trade)}
+                                                        disabled={isDeleting || isLoading}
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                                                        title="Delete Trade"
+                                                    >
+                                                        {isDeleting ? <Loader2 size={14} className="animate-spin text-red-500" /> : <Trash2 size={14} />}
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 );
@@ -328,9 +366,10 @@ const TradeGroup = memo(({ ticker, trades, isLoading, onDelete }: { ticker: stri
 
 // --- Main Component ---
 
-export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = false, onAddTrade, onDeleteTrade }) => {
+export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = false, onAddTrade, onEditTrade, onDeleteTrade }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
 
   // 1. Group trades by Ticker and sort within groups
   const groupedTrades = useMemo(() => {
@@ -397,9 +436,16 @@ export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = fals
       </header>
 
       <AddTradeModal 
-         isOpen={isAddModalOpen} 
-         onClose={() => setIsAddModalOpen(false)}
-         onSave={onAddTrade}
+         isOpen={isAddModalOpen || !!editingTrade}
+         initialData={editingTrade}
+         onClose={() => { setIsAddModalOpen(false); setEditingTrade(null); }}
+         onSave={async (trade) => {
+             if (editingTrade && onEditTrade) {
+                 await onEditTrade(trade);
+             } else {
+                 await onAddTrade(trade);
+             }
+         }}
       />
 
       <div className={`transition-all duration-500 space-y-8 ${isLoading ? 'opacity-70 pointer-events-none' : 'opacity-100'}`}>
@@ -410,6 +456,7 @@ export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = fals
                 trades={tickerTrades} 
                 isLoading={isLoading} 
                 onDelete={onDeleteTrade}
+                onEdit={setEditingTrade}
             />
         ))}
 

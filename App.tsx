@@ -15,7 +15,7 @@ import { fetchLiveRates } from './services/currencyService';
 import { reconcileInvestments } from './services/portfolioService';
 import { useIndexedDB } from './hooks/useIndexedDB';
 import { initGoogleAuth, isAuthInitialized } from './services/authService';
-import { addTradeToSheet, deleteTradeFromSheet } from './services/sheetWriteService';
+import { addTradeToSheet, deleteTradeFromSheet, updateTradeInSheet } from './services/sheetWriteService';
 import { Loader2 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -203,7 +203,21 @@ function App() {
     await addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, newTrade);
     
     // 2. IMPORTANT: Sync Trades immediately to fetch the new row index.
-    // This ensures the new trade becomes deletable right away.
+    await syncData(['trades']);
+  }, [sheetConfig, syncData]);
+
+  const handleEditTrade = useCallback(async (trade: Trade) => {
+    if (!sheetConfig.sheetId || !sheetConfig.tabNames.trades) {
+        throw new Error("Cannot edit: Config missing.");
+    }
+    if (trade.rowIndex === undefined) {
+        throw new Error("Cannot edit: Row Index missing. Please sync to refresh data.");
+    }
+
+    // 1. Update in Sheet
+    await updateTradeInSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, trade.rowIndex, trade);
+
+    // 2. Sync to reflect changes
     await syncData(['trades']);
   }, [sheetConfig, syncData]);
 
@@ -219,8 +233,6 @@ function App() {
       await deleteTradeFromSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, trade.rowIndex);
 
       // 2. Sync to update indices for all subsequent rows
-      // Deleting a row shifts all subsequent rows up, invalidating their indices.
-      // A full sync is safer than a local optimistic update for deletion.
       await syncData(['trades']);
   }, [sheetConfig, syncData]);
 
@@ -280,6 +292,7 @@ function App() {
                 trades={trades} 
                 isLoading={isSyncing} 
                 onAddTrade={handleAddTrade}
+                onEditTrade={handleEditTrade}
                 onDeleteTrade={handleDeleteTrade}
             />
           )}
