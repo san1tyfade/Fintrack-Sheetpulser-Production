@@ -15,7 +15,7 @@ import { fetchLiveRates } from './services/currencyService';
 import { reconcileInvestments } from './services/portfolioService';
 import { useIndexedDB } from './hooks/useIndexedDB';
 import { initGoogleAuth, isAuthInitialized } from './services/authService';
-import { addTradeToSheet, deleteTradeFromSheet, updateTradeInSheet } from './services/sheetWriteService';
+import { addTradeToSheet, deleteRowFromSheet, updateTradeInSheet, addAssetToSheet, updateAssetInSheet } from './services/sheetWriteService';
 import { Loader2 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -194,15 +194,14 @@ function App() {
     }
   }, [sheetConfig, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setDebtEntries, setIncomeData, setExpenseData, setDetailedExpenses, setLastUpdatedStr]);
 
+  // --- Trade Handlers ---
+
   const handleAddTrade = useCallback(async (newTrade: Trade) => {
     if (!sheetConfig.sheetId || !sheetConfig.tabNames.trades) {
         throw new Error("Cannot add trade: Trades tab not configured or Sheet ID missing.");
     }
-    
-    // 1. Write to Google Sheet
     await addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, newTrade);
-    
-    // 2. IMPORTANT: Sync Trades immediately to fetch the new row index.
+    // For Adds, we generally want to sync to get the new Row ID, despite caching risk
     await syncData(['trades']);
   }, [sheetConfig, syncData]);
 
@@ -213,13 +212,12 @@ function App() {
     if (trade.rowIndex === undefined) {
         throw new Error("Cannot edit: Row Index missing. Please sync to refresh data.");
     }
-
-    // 1. Update in Sheet
+    
     await updateTradeInSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, trade.rowIndex, trade);
-
-    // 2. Sync to reflect changes
-    await syncData(['trades']);
-  }, [sheetConfig, syncData]);
+    
+    // Update local state directly to avoid caching issues
+    setTrades(prev => prev.map(t => t.id === trade.id ? trade : t));
+  }, [sheetConfig, setTrades]);
 
   const handleDeleteTrade = useCallback(async (trade: Trade) => {
       if (!sheetConfig.sheetId || !sheetConfig.tabNames.trades) {
@@ -228,13 +226,73 @@ function App() {
       if (trade.rowIndex === undefined) {
           throw new Error("Cannot delete: Row Index missing (try syncing first).");
       }
+      
+      await deleteRowFromSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, trade.rowIndex);
+      
+      // Update local state and adjust row indices for subsequent items
+      setTrades(prev => {
+          const deletedIndex = trade.rowIndex!;
+          return prev
+            .filter(t => t.id !== trade.id)
+            .map(t => {
+                if (t.rowIndex !== undefined && t.rowIndex > deletedIndex) {
+                    return { ...t, rowIndex: t.rowIndex - 1 };
+                }
+                return t;
+            });
+      });
+  }, [sheetConfig, setTrades]);
 
-      // 1. Delete from Sheet
-      await deleteTradeFromSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, trade.rowIndex);
+  // --- Asset Handlers ---
 
-      // 2. Sync to update indices for all subsequent rows
-      await syncData(['trades']);
+  const handleAddAsset = useCallback(async (newAsset: Asset) => {
+      if (!sheetConfig.sheetId || !sheetConfig.tabNames.assets) {
+          throw new Error("Cannot add asset: Assets tab not configured.");
+      }
+      await addAssetToSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, newAsset);
+      // For new assets, we do sync to retrieve the generated Row Index for future edits
+      await syncData(['assets']);
   }, [sheetConfig, syncData]);
+
+  const handleEditAsset = useCallback(async (asset: Asset) => {
+      if (!sheetConfig.sheetId || !sheetConfig.tabNames.assets) {
+          throw new Error("Cannot edit: Config missing.");
+      }
+      if (asset.rowIndex === undefined) {
+          throw new Error("Cannot edit: Row Index missing. Please sync to refresh data.");
+      }
+      
+      // 1. Write to Sheet
+      await updateAssetInSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, asset.rowIndex, asset);
+      
+      // 2. Update Local State directly (skip sync to avoid stale cache)
+      setAssets(prev => prev.map(item => item.id === asset.id ? asset : item));
+      
+  }, [sheetConfig, setAssets]);
+
+  const handleDeleteAsset = useCallback(async (asset: Asset) => {
+      if (!sheetConfig.sheetId || !sheetConfig.tabNames.assets) {
+          throw new Error("Cannot delete: Config missing.");
+      }
+      if (asset.rowIndex === undefined) {
+          throw new Error("Cannot delete: Row Index missing. Please sync first.");
+      }
+      
+      await deleteRowFromSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, asset.rowIndex);
+      
+      // Update local state directly
+      setAssets(prev => {
+          const deletedIndex = asset.rowIndex!;
+          return prev
+            .filter(item => item.id !== asset.id)
+            .map(item => {
+                if (item.rowIndex !== undefined && item.rowIndex > deletedIndex) {
+                    return { ...item, rowIndex: item.rowIndex - 1 };
+                }
+                return item;
+            });
+      });
+  }, [sheetConfig, setAssets]);
 
   if (!configLoaded || !themeLoaded) {
       return (
@@ -276,6 +334,9 @@ function App() {
                 assets={assets} 
                 isLoading={isSyncing} 
                 exchangeRates={exchangeRates}
+                onAddAsset={handleAddAsset}
+                onEditAsset={handleEditAsset}
+                onDeleteAsset={handleDeleteAsset}
             />
           )}
           {currentView === ViewState.INVESTMENTS && (

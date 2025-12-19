@@ -1,6 +1,7 @@
 
 export interface Asset {
   id: string;
+  rowIndex?: number; // Added for deletion logic
   name: string;
   type: string;
   value: number;
@@ -66,6 +67,7 @@ export interface DebtEntry {
 export interface NetWorthEntry {
   date: string;
   value: number;
+  currency?: string;
 }
 
 export interface IncomeEntry {

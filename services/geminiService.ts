@@ -704,12 +704,11 @@ export const parseRawData = async <T,>(
     
     const parsedItem = parser(values);
     if (parsedItem) {
-        // --- NEW: Inject row index for Trades ---
+        // --- NEW: Inject row index for Trades and Assets ---
         // Google Sheets API deleteDimension is 0-based.
-        // lines[0] is index 0. If headers are at 0, data starts at 1.
         // We track the index in the original lines array to know where it resides in the CSV (and thus the sheet).
-        if (dataType === 'trades') {
-            (parsedItem as Trade).rowIndex = i;
+        if (dataType === 'trades' || dataType === 'assets') {
+            (parsedItem as any).rowIndex = i;
         }
         results.push(parsedItem);
     }
