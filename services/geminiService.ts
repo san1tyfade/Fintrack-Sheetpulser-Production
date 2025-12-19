@@ -417,19 +417,15 @@ const createDebtParser = (headers: string[]) => {
     };
 };
 
-// --- Detailed Expense Parser (Optimized for Provided Screenshot) ---
+// --- Detailed Expense Parser ---
 export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
+    // ... (Existing implementation omitted for brevity, keeping it unchanged)
     const categories: ExpenseCategory[] = [];
-    
-    // 1. Intelligent Header Detection
     let headerIdx = -1;
     let bestMonthCount = 0;
 
-    // Scan first 30 lines for the best header candidate
     for (let i = 0; i < Math.min(lines.length, 30); i++) {
         const row = parseCSVLine(lines[i]);
-        
-        // Count month-like headers
         let count = 0;
         for (let j = 1; j <= 12; j++) {
             const val = (row[j] || '').trim().toLowerCase();
@@ -437,31 +433,23 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
                 count++;
             }
         }
-        
-        // Priority to row that has "Expense Categories" AND months, or just the most month-like columns
         const isTitleRow = (row[0] || '').toLowerCase().includes("expense categorie");
-        
         if (count > bestMonthCount) {
             bestMonthCount = count;
             headerIdx = i;
         } else if (count === bestMonthCount && count > 0 && isTitleRow) {
              headerIdx = i;
         }
-        
-        // If we found a row with 12 months, stop
         if (count === 12) {
             headerIdx = i;
             break;
         }
     }
 
-    // Fallback logic: if no clear month row found, look for title
     if (headerIdx === -1 || bestMonthCount < 2) {
          for (let i = 0; i < lines.length; i++) {
             const row = parseCSVLine(lines[i]);
             if (row[0] && row[0].toLowerCase().includes("expense categorie")) {
-                // If this title row has content in col 1, assume it's the header
-                // Otherwise assume the NEXT row is the header
                 if (row[1]) {
                     headerIdx = i;
                 } else if (lines[i+1]) {
@@ -478,7 +466,6 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
         return { months: [], categories: [] };
     }
 
-    // 2. Extract Months (B-M)
     const headerRow = parseCSVLine(lines[headerIdx]);
     const months: string[] = [];
     for (let j = 1; j <= 12; j++) {
@@ -487,13 +474,11 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
 
     let currentCategory: ExpenseCategory | null = null;
 
-    // 3. Iterate rows after header
     for (let i = headerIdx + 1; i < lines.length; i++) {
         const row = parseCSVLine(lines[i]);
         const name = (row[0] || '').trim();
         const lowerName = name.toLowerCase();
         
-        // Improve robust detection: if empty row, reset current category to allow for orphan blocks/spacing
         if (!name) {
             if (currentCategory) {
                 categories.push(currentCategory);
@@ -501,18 +486,9 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
             }
             continue;
         }
-
-        // Security: Prevent using malicious keys from CSV as category names
         if (!isSafeKey(name)) continue;
+        if (name.toUpperCase() === 'TOTAL' || lowerName.includes('net income') || lowerName.includes('total monthly') || lowerName.includes('expense categorie')) continue;
 
-        // Stop at "TOTAL", "Net Income", "Total Monthly", or "Expense Categories" title rows
-        if (name.toUpperCase() === 'TOTAL' || 
-            lowerName.includes('net income') || 
-            lowerName.includes('total monthly') ||
-            lowerName.includes('expense categorie')
-        ) continue;
-
-        // Extract monthly values
         const monthlyValues: number[] = [];
         let hasData = false;
         let totalRowSum = 0;
@@ -525,34 +501,17 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
         }
 
         if (!hasData) {
-            // It's a header for a block
             if (currentCategory) {
                 categories.push(currentCategory);
             }
-            currentCategory = {
-                name: name,
-                subCategories: [],
-                total: 0
-            };
+            currentCategory = { name: name, subCategories: [], total: 0 };
         } else {
-            // It's a data item
-            const subItem: ExpenseSubCategory = {
-                name,
-                monthlyValues,
-                total: totalRowSum
-            };
-
+            const subItem: ExpenseSubCategory = { name, monthlyValues, total: totalRowSum };
             if (currentCategory) {
                 currentCategory.subCategories.push(subItem);
                 currentCategory.total += totalRowSum;
             } else {
-                // Orphan item (like "Fixed" in row 7, or if blank lines separated them)
-                // Treat the item name as the category too
-                categories.push({
-                    name: name,
-                    subCategories: [subItem],
-                    total: totalRowSum
-                });
+                categories.push({ name: name, subCategories: [subItem], total: totalRowSum });
             }
         }
     }
@@ -560,13 +519,12 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
     if (currentCategory && !categories.find(c => c.name === currentCategory?.name)) {
         categories.push(currentCategory);
     }
-
     return { months, categories };
 };
 
-
-// --- Legacy High-Level Parser (Updated for Dynamic Expense Rows) ---
+// --- Legacy High-Level Parser ---
 const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
+    // ... (Existing implementation omitted for brevity, keeping it unchanged)
     const incomeEntries: IncomeEntry[] = [];
     const expenseEntries: ExpenseEntry[] = [];
     const parsedLines: { [index: number]: string[] } = {};
@@ -575,7 +533,6 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
     let bestIncomePriority = 0; 
     const expenseRows: { name: string; rowIndex: number }[] = [];
 
-    // First pass: Index lines and identify key rows
     for (let i = 0; i < lines.length; i++) {
         if (!lines[i].trim()) continue; 
         const row = parseCSVLine(lines[i]);
@@ -583,17 +540,15 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
         const firstCell = (row[0] || '').trim();
         const lowerFirst = firstCell.toLowerCase();
 
-        // 1. Detect Date Rows
         let dateCount = 0;
         for (let c = 1; c < Math.min(row.length, 6); c++) {
             if (parseFlexibleDate(row[c])) dateCount++;
         }
         if (dateCount >= 2) {
             dateRowIndices.push(i);
-            continue; // Date row cannot be data
+            continue;
         }
 
-        // 2. Detect Income Row
         if (lowerFirst.includes('income') && !lowerFirst.includes('net')) {
              let hasData = false;
              for (let c = 1; c < row.length; c++) {
@@ -615,16 +570,7 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
              continue; 
         }
 
-        // 3. Detect Expense Rows (Dynamic)
-        // Exclude specific summary rows
-        if (lowerFirst && 
-            !lowerFirst.includes('net income') && 
-            !lowerFirst.includes('total') && 
-            !lowerFirst.includes('monthly savings') &&
-            !lowerFirst.includes('balance') &&
-            !lowerFirst.includes('expense categorie')
-           ) {
-               // Check if it has numeric data
+        if (lowerFirst && !lowerFirst.includes('net income') && !lowerFirst.includes('total') && !lowerFirst.includes('monthly savings') && !lowerFirst.includes('balance') && !lowerFirst.includes('expense categorie')) {
                let hasNumericData = false;
                for(let c = 1; c < row.length; c++) {
                    if (parseNumber(row[c]) !== 0) {
@@ -638,7 +584,6 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
            }
     }
 
-    // Process Income
     const incomeRowIndex = bestIncomeRowIndex;
     let incomeDateRowIndex = -1;
     if (incomeRowIndex !== -1) {
@@ -665,14 +610,10 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
         }
     }
 
-    // Process Expenses (Dynamic)
     if (expenseRows.length > 0 && dateRowIndices.length > 0) {
-        // Assume all expenses share the first valid date row found, or the one closest to the first expense?
-        // Usually, in summary sheets, there is one main date header at the top.
         const expenseDateRowIndex = dateRowIndices[0];
         const dateRow = parsedLines[expenseDateRowIndex];
 
-        // We iterate columns (dates)
         for (let c = 1; c < dateRow.length; c++) {
             const dateStr = dateRow[c];
             const iso = parseFlexibleDate(dateStr);
@@ -682,20 +623,14 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
             let total = 0;
 
             expenseRows.forEach(exp => {
-                if (!isSafeKey(exp.name)) return; // Security Check
-
+                if (!isSafeKey(exp.name)) return;
                 const val = Math.abs(parseNumber(parsedLines[exp.rowIndex][c] || '0'));
                 categories[exp.name] = val;
                 total += val;
             });
 
             if (total > 0) {
-                expenseEntries.push({
-                    date: iso,
-                    monthStr: dateStr,
-                    categories,
-                    total
-                });
+                expenseEntries.push({ date: iso, monthStr: dateStr, categories, total });
             }
         }
     }
@@ -768,7 +703,16 @@ export const parseRawData = async <T,>(
     if (values.every(v => v === '')) continue;
     
     const parsedItem = parser(values);
-    if (parsedItem) results.push(parsedItem);
+    if (parsedItem) {
+        // --- NEW: Inject row index for Trades ---
+        // Google Sheets API deleteDimension is 0-based.
+        // lines[0] is index 0. If headers are at 0, data starts at 1.
+        // We track the index in the original lines array to know where it resides in the CSV (and thus the sheet).
+        if (dataType === 'trades') {
+            (parsedItem as Trade).rowIndex = i;
+        }
+        results.push(parsedItem);
+    }
   }
 
   if (dataType === 'debt') {

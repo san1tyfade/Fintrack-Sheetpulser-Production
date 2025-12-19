@@ -22,6 +22,7 @@ export interface Investment {
 
 export interface Trade {
   id: string;
+  rowIndex?: number; // Added for deletion logic
   date: string;
   ticker: string;
   type: 'BUY' | 'SELL';
@@ -105,6 +106,7 @@ export interface DetailedExpenseData {
 
 export interface SheetConfig {
   sheetId: string;
+  clientId: string; // Added for OAuth
   tabNames: {
     assets: string;
     investments: string;

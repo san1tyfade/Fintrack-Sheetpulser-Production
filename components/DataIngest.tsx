@@ -4,10 +4,10 @@ import { SheetConfig } from '../types';
 import { 
   Loader2, CheckCircle2, AlertCircle, Link, FileSpreadsheet, RefreshCw, 
   Layers, DollarSign, History, Sun, Moon, ShieldCheck, 
-  Trash2, ExternalLink
+  Trash2, ExternalLink, Key, Info, Cloud
 } from 'lucide-react';
 import { validateSheetTab } from '../services/sheetService';
-import { clear } from '../services/dbService';
+import { initGoogleAuth, signIn, isAuthInitialized } from '../services/authService';
 
 interface DataIngestProps {
   config: SheetConfig;
@@ -93,16 +93,76 @@ export const DataIngest: React.FC<DataIngestProps> = ({
     toggleTheme
 }) => {
   
+  const [authLoading, setAuthLoading] = useState(false);
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+
   const updateTab = (key: keyof SheetConfig['tabNames'], value: string) => {
     onConfigChange({ ...config, tabNames: { ...config.tabNames, [key]: value } });
   };
 
   const handleWipeData = async () => {
     if (confirm("Permanently wipe all local data? This cannot be undone.")) {
-        await clear(); // Clear IndexedDB
-        localStorage.clear(); // Clear LocalStorage
-        window.location.reload();
+        // Clear IndexedDB
+        const req = indexedDB.deleteDatabase('FinTrackDB');
+        req.onsuccess = () => {
+            window.location.reload();
+        };
+        req.onerror = () => {
+            console.error("Failed to delete DB");
+            window.location.reload();
+        };
     }
+  };
+
+  const handleAuthTest = async () => {
+      setAuthLoading(true);
+      try {
+          if (!config.clientId) {
+              alert("Please enter a Client ID first.");
+              return;
+          }
+          
+          // Always try to init (authService will handle if it needs re-init)
+          const initialized = initGoogleAuth(config.clientId);
+          
+          if (initialized) {
+             // Now we await the actual token
+             const token = await signIn();
+             
+             // NEW: Verify Actual API Access
+             if (config.sheetId) {
+                 const testUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.sheetId}?fields=properties.title`;
+                 const res = await fetch(testUrl, {
+                     headers: { Authorization: `Bearer ${token}` }
+                 });
+                 
+                 if (res.ok) {
+                     alert("Authentication Successful! \n\n✔ Identity Verified\n✔ Google Sheets API Enabled\n✔ Write Access Confirmed");
+                 } else {
+                     if (res.status === 403) {
+                         alert("Authentication worked, but permission was denied.\n\nCRITICAL: You must enable the 'Google Sheets API' in your Google Cloud Console for this project.\n\nAlso ensure the Sheet is shared with your email.");
+                     } else {
+                         alert(`Authentication worked, but cannot access Sheet (${res.status}).\nCheck your Sheet ID.`);
+                     }
+                 }
+             } else {
+                 alert("Authentication Successful! (Add Sheet ID to verify write access)");
+             }
+          } else {
+              alert("Could not initialize Google Auth script. Check internet connection.");
+          }
+      } catch (e: any) {
+          const msg = e.error || e.message || JSON.stringify(e);
+          // Suppress popup closed error
+          if (msg.includes("popup_closed") || msg.includes("closed")) {
+              console.log("Auth popup closed by user");
+          } else {
+              console.error(e);
+              alert("Auth failed: " + msg);
+          }
+      } finally {
+          setAuthLoading(false);
+      }
   };
 
   const categories = [
@@ -118,7 +178,7 @@ export const DataIngest: React.FC<DataIngestProps> = ({
         <div className="md:col-span-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-2xl shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Link size={16} className="text-blue-500" /> Google Spreadsheet Source
+              <Link size={16} className="text-blue-500" /> Source Configuration
             </h3>
             {sheetUrl && (
               <a 
@@ -131,16 +191,80 @@ export const DataIngest: React.FC<DataIngestProps> = ({
               </a>
             )}
           </div>
-          <input 
-            type="text" 
-            value={sheetUrl}
-            onChange={(e) => onSheetUrlChange(e.target.value)}
-            placeholder="Paste your public sheet URL here..."
-            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none transition-all shadow-inner"
-          />
-          <p className="text-[10px] text-slate-500 leading-relaxed">
-            Sheet must be shared as <span className="font-bold text-slate-700 dark:text-slate-300">"Anyone with the link can view"</span>.
-          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Sheet URL</label>
+                  <input 
+                    type="text" 
+                    value={sheetUrl}
+                    onChange={(e) => onSheetUrlChange(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none transition-all shadow-inner"
+                  />
+              </div>
+              <div className="space-y-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block flex items-center gap-1">
+                        Client ID <Key size={10} />
+                    </label>
+                    <input 
+                        type="text" 
+                        value={config.clientId || ''}
+                        onChange={(e) => onConfigChange({ ...config, clientId: e.target.value })}
+                        placeholder="Google Cloud OAuth Client ID"
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none transition-all shadow-inner"
+                    />
+                  </div>
+                  
+                  {/* Hints */}
+                  <div className="flex flex-col gap-2">
+                      <div className="p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-xl">
+                          <div className="flex items-start gap-2">
+                              <Cloud size={14} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                              <div>
+                                  <p className="text-[10px] text-blue-800 dark:text-blue-200 font-bold mb-1">APIs Required</p>
+                                  <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                                      Ensure <strong>"Google Sheets API"</strong> is enabled in your Google Cloud Console for this project.
+                                  </p>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div className="p-3 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-200 dark:border-yellow-500/20 rounded-xl">
+                          <div className="flex items-start gap-2">
+                              <Info size={14} className="text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-[10px] text-yellow-800 dark:text-yellow-200 font-bold mb-1">
+                                    Origin Configuration
+                                </p>
+                                <p className="text-[10px] text-slate-600 dark:text-slate-400 mb-2 leading-relaxed">
+                                    Add this URL to <strong>Authorized JavaScript origins</strong>:
+                                </p>
+                                <code className="block w-full bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700 text-[10px] font-mono text-slate-700 dark:text-slate-300 break-all select-all shadow-sm">
+                                    {currentOrigin}
+                                </code>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
+          <div className="flex justify-between items-center">
+             <p className="text-[10px] text-slate-500 leading-relaxed">
+                Client ID is required for <span className="font-bold">Write Access</span>.
+            </p>
+            {config.clientId && (
+                <button 
+                    onClick={handleAuthTest} 
+                    disabled={authLoading}
+                    className="text-[10px] font-bold text-blue-500 hover:underline disabled:opacity-50 flex items-center gap-1"
+                >
+                    {authLoading && <Loader2 size={10} className="animate-spin" />}
+                    {authLoading ? 'Waiting for popup...' : 'Test Authentication'}
+                </button>
+            )}
+          </div>
         </div>
 
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-2xl shadow-sm flex flex-col justify-between h-full">
@@ -228,7 +352,7 @@ export const DataIngest: React.FC<DataIngestProps> = ({
           <div className="space-y-1">
             <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Privacy First</h4>
             <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              All processing is done in your browser. Config and data never leave your local <code>IndexedDB</code>.
+              All processing is done in your browser. Config and data are stored in <span className="font-mono">IndexedDB</span> for performance and security.
             </p>
           </div>
         </div>
@@ -247,7 +371,7 @@ export const DataIngest: React.FC<DataIngestProps> = ({
             onClick={handleWipeData}
             className="text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-500/20 px-4 py-2 rounded-lg hover:bg-red-600 hover:text-white transition-all shadow-sm"
           >
-            Wipe Storage
+            Wipe DB
           </button>
         </div>
       </div>

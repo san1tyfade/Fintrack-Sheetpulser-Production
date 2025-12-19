@@ -1,75 +1,82 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import { get, set } from '../services/dbService';
 
-export function useIndexedDB<T>(key: string, initialValue: T) {
-  const [storedValue, setStoredValue] = useState<T>(initialValue);
-  const [isLoaded, setIsLoaded] = useState(false);
+const DB_NAME = 'FinTrackDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'app_state';
 
-  useEffect(() => {
-    let isActive = true;
-
-    const loadData = async () => {
-      try {
-        // 1. Check IndexedDB first
-        const dbValue = await get(key);
-        
-        if (dbValue !== undefined) {
-          if (isActive) {
-            setStoredValue(dbValue);
-            setIsLoaded(true);
-          }
-          return;
-        }
-
-        // 2. Migration: Check LocalStorage if not in DB
-        // If data exists in LocalStorage, move it to IndexedDB and delete from LocalStorage
-        if (typeof window !== 'undefined') {
-          const item = window.localStorage.getItem(key);
-          if (item) {
-            try {
-              const parsed = JSON.parse(item);
-              if (isActive) setStoredValue(parsed);
-              
-              // Persist to IDB
-              await set(key, parsed);
-              
-              // Cleanup Legacy
-              window.localStorage.removeItem(key);
-              
-              if (isActive) setIsLoaded(true);
-              return;
-            } catch (e) {
-              console.warn(`[Migration] Failed to parse localStorage key "${key}"`, e);
-            }
-          }
-        }
-
-        // 3. Fallback to Initial Value
-        // If we reached here, data is neither in DB nor LS. Use default.
-        if (isActive) setIsLoaded(true);
-
-      } catch (error) {
-        console.error(`Error loading key "${key}" from IndexedDB:`, error);
-        if (isActive) setIsLoaded(true);
+// Simple Promisified IDB Wrapper
+const openDB = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
       }
     };
 
-    loadData();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+};
 
-    return () => {
-      isActive = false;
-    };
-  }, [key]);
+const dbGet = async <T>(key: string): Promise<T | undefined> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const request = store.get(key);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const dbSet = async <T>(key: string, value: T): Promise<void> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const request = store.put(value, key);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
+export function useIndexedDB<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void, boolean] {
+  const [storedValue, setStoredValue] = useState<T>(initialValue);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load from DB on mount
+  useEffect(() => {
+    let isMounted = true;
+    dbGet<T>(key).then((val) => {
+      if (isMounted) {
+        if (val !== undefined) {
+          setStoredValue(val);
+        } else {
+            // Initialize DB with default if missing
+            dbSet(key, initialValue);
+        }
+        setLoaded(true);
+      }
+    }).catch(err => {
+      console.error(`Error loading ${key} from IDB`, err);
+      if (isMounted) setLoaded(true);
+    });
+    
+    return () => { isMounted = false; };
+  }, [key]); // Only run once per key
 
   const setValue = useCallback((value: T | ((val: T) => T)) => {
     setStoredValue((prev) => {
       const valueToStore = value instanceof Function ? value(prev) : value;
-      // Fire-and-forget write to DB
-      set(key, valueToStore).catch(err => console.error(`Failed to write to DB for key "${key}"`, err));
+      // Fire and forget save
+      dbSet(key, valueToStore).catch(e => console.error(`Failed to save ${key}`, e));
       return valueToStore;
     });
   }, [key]);
 
-  return [storedValue, setValue, isLoaded] as const;
+  return [storedValue, setValue, loaded];
 }

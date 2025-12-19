@@ -1,17 +1,212 @@
 
 import React, { useMemo, useState, memo } from 'react';
 import { Trade } from '../types';
-import { History, TrendingUp, TrendingDown, Search, X, Loader2, Calendar, DollarSign, Hash } from 'lucide-react';
+import { History, TrendingUp, TrendingDown, Search, X, Loader2, Calendar, DollarSign, Hash, Plus, Save, Trash2 } from 'lucide-react';
 
 interface TradesListProps {
   trades: Trade[];
   isLoading?: boolean;
+  onAddTrade: (trade: Trade) => Promise<void>;
+  onDeleteTrade?: (trade: Trade) => Promise<void>;
 }
+
+// --- Sub-Component: AddTradeModal ---
+
+const AddTradeModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: () => void, onSave: (t: Trade) => Promise<void> }) => {
+    const [formData, setFormData] = useState<Partial<Trade>>({
+        date: new Date().toISOString().split('T')[0],
+        type: 'BUY',
+        ticker: '',
+        quantity: 0,
+        price: 0,
+        fee: 0
+    });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    if (!isOpen) return null;
+
+    const total = (formData.quantity || 0) * (formData.price || 0) + (formData.type === 'BUY' ? (formData.fee || 0) : -(formData.fee || 0));
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+        if (!formData.ticker || !formData.quantity || !formData.price) {
+            setError("Please fill in all required fields.");
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const newTrade: Trade = {
+                id: crypto.randomUUID(), // Local ID until sync
+                date: formData.date!,
+                ticker: formData.ticker.toUpperCase(),
+                type: formData.type as 'BUY' | 'SELL',
+                quantity: Number(formData.quantity),
+                price: Number(formData.price),
+                fee: Number(formData.fee || 0),
+                total: total
+            };
+            await onSave(newTrade);
+            onClose();
+            // Reset form slightly but keep date
+            setFormData(prev => ({ ...prev, ticker: '', quantity: 0, price: 0, fee: 0 }));
+        } catch (err: any) {
+            setError(err.message || "Failed to save trade.");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+                    <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                        <Plus size={18} className="text-blue-500" /> New Trade
+                    </h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
+                        <X size={20} />
+                    </button>
+                </div>
+                
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    {error && (
+                        <div className="p-3 bg-red-50 text-red-600 text-xs rounded-lg border border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20">
+                            {error}
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
+                            <input 
+                                type="date" 
+                                value={formData.date}
+                                onChange={e => setFormData({...formData, date: e.target.value})}
+                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Type</label>
+                            <div className="flex bg-slate-100 dark:bg-slate-900 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
+                                {['BUY', 'SELL'].map(t => (
+                                    <button
+                                        key={t}
+                                        type="button"
+                                        onClick={() => setFormData({...formData, type: t as any})}
+                                        className={`flex-1 text-xs font-bold py-1.5 rounded-lg transition-all ${
+                                            formData.type === t 
+                                            ? (t === 'BUY' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-red-500 text-white shadow-sm')
+                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                        }`}
+                                    >
+                                        {t}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ticker Symbol</label>
+                        <div className="relative">
+                            <input 
+                                type="text" 
+                                placeholder="e.g. AAPL, BTC, VFV"
+                                value={formData.ticker}
+                                onChange={e => setFormData({...formData, ticker: e.target.value.toUpperCase()})}
+                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-3 pr-3 py-2 text-sm font-bold tracking-wide outline-none focus:ring-2 focus:ring-blue-500 uppercase"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Quantity</label>
+                            <input 
+                                type="number" 
+                                placeholder="0.00"
+                                step="any"
+                                value={formData.quantity || ''}
+                                onChange={e => setFormData({...formData, quantity: parseFloat(e.target.value)})}
+                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Price per Unit</label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
+                                <input 
+                                    type="number" 
+                                    placeholder="0.00"
+                                    step="any"
+                                    value={formData.price || ''}
+                                    onChange={e => setFormData({...formData, price: parseFloat(e.target.value)})}
+                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-6 pr-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 items-end">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Fees (Optional)</label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
+                                <input 
+                                    type="number" 
+                                    placeholder="0.00"
+                                    step="any"
+                                    value={formData.fee || ''}
+                                    onChange={e => setFormData({...formData, fee: parseFloat(e.target.value)})}
+                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-6 pr-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                        </div>
+                        <div className="bg-slate-100 dark:bg-slate-700/50 rounded-xl p-2 text-right">
+                             <span className="block text-[10px] text-slate-500 uppercase font-bold">Est. Total</span>
+                             <span className="font-mono font-bold text-lg text-slate-900 dark:text-white">
+                                 ${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                             </span>
+                        </div>
+                    </div>
+
+                    <button 
+                        type="submit" 
+                        disabled={isSubmitting}
+                        className="w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                        {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                        {isSubmitting ? 'Saving to Sheet...' : 'Save Transaction'}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
 
 // --- Sub-Component: TradeGroup (Memoized) ---
 
-const TradeGroup = memo(({ ticker, trades, isLoading }: { ticker: string, trades: Trade[], isLoading: boolean }) => {
+const TradeGroup = memo(({ ticker, trades, isLoading, onDelete }: { ticker: string, trades: Trade[], isLoading: boolean, onDelete?: (t: Trade) => Promise<void> }) => {
     
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+
+    const handleDeleteClick = async (trade: Trade) => {
+        if (!onDelete) return;
+        if (!confirm(`Are you sure you want to delete this ${trade.type} trade for ${trade.ticker}? This will remove the row from your Google Sheet.`)) return;
+        
+        setDeletingId(trade.id);
+        try {
+            await onDelete(trade);
+        } catch (e: any) {
+            alert(e.message);
+        } finally {
+            setDeletingId(null);
+        }
+    };
+
     // Optimize stats calculation
     const stats = useMemo(() => {
         let boughtQty = 0;
@@ -75,6 +270,7 @@ const TradeGroup = memo(({ ticker, trades, isLoading }: { ticker: string, trades
                                 <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right"><span className="flex items-center gap-1 justify-end"><Hash size={12}/> Qty</span></th>
                                 <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right"><span className="flex items-center gap-1 justify-end"><DollarSign size={12}/> Price</span></th>
                                 <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Total Value</th>
+                                <th className="p-4 w-10"></th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -82,6 +278,8 @@ const TradeGroup = memo(({ ticker, trades, isLoading }: { ticker: string, trades
                                 const isBuy = (trade.type || 'BUY').trim().toUpperCase() === 'BUY';
                                 const dateObj = new Date(trade.date);
                                 const dateDisplay = isNaN(dateObj.getTime()) ? trade.date : dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                                const canDelete = trade.rowIndex !== undefined && onDelete;
+                                const isDeleting = deletingId === trade.id;
 
                                 return (
                                     <tr key={trade.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group/row">
@@ -105,6 +303,18 @@ const TradeGroup = memo(({ ticker, trades, isLoading }: { ticker: string, trades
                                         <td className="p-4 text-right text-slate-900 dark:text-white font-bold font-mono text-sm">
                                             {isLoading ? <div className="h-4 w-20 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse ml-auto" /> : `$${Math.abs(trade.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                                         </td>
+                                        <td className="p-4 text-right">
+                                            {canDelete && (
+                                                <button 
+                                                    onClick={() => handleDeleteClick(trade)}
+                                                    disabled={isDeleting || isLoading}
+                                                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors opacity-0 group-hover/row:opacity-100 disabled:opacity-50"
+                                                    title="Delete Trade from Sheet"
+                                                >
+                                                    {isDeleting ? <Loader2 size={14} className="animate-spin text-red-500" /> : <Trash2 size={14} />}
+                                                </button>
+                                            )}
+                                        </td>
                                     </tr>
                                 );
                             })}
@@ -118,8 +328,9 @@ const TradeGroup = memo(({ ticker, trades, isLoading }: { ticker: string, trades
 
 // --- Main Component ---
 
-export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = false }) => {
+export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = false, onAddTrade, onDeleteTrade }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   // 1. Group trades by Ticker and sort within groups
   const groupedTrades = useMemo(() => {
@@ -149,11 +360,19 @@ export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = fals
     <div className="space-y-8 animate-fade-in pb-20">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <h2 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
-            Trades
-            {isLoading && <Loader2 className="animate-spin text-blue-500 dark:text-blue-400" size={24} />}
-          </h2>
-          <p className="text-slate-500 dark:text-slate-400">Historical transaction log grouped by asset.</p>
+          <div className="flex items-center gap-4">
+              <h2 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
+                Trades
+                {isLoading && <Loader2 className="animate-spin text-blue-500 dark:text-blue-400" size={24} />}
+              </h2>
+              <button 
+                onClick={() => setIsAddModalOpen(true)}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5"
+              >
+                  <Plus size={16} /> Add Trade
+              </button>
+          </div>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">Historical transaction log grouped by asset.</p>
         </div>
         
         {/* Search Bar */}
@@ -177,6 +396,12 @@ export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = fals
         </div>
       </header>
 
+      <AddTradeModal 
+         isOpen={isAddModalOpen} 
+         onClose={() => setIsAddModalOpen(false)}
+         onSave={onAddTrade}
+      />
+
       <div className={`transition-all duration-500 space-y-8 ${isLoading ? 'opacity-70 pointer-events-none' : 'opacity-100'}`}>
         {filteredGroups.map(([ticker, tickerTrades]) => (
             <TradeGroup 
@@ -184,6 +409,7 @@ export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = fals
                 ticker={ticker} 
                 trades={tickerTrades} 
                 isLoading={isLoading} 
+                onDelete={onDeleteTrade}
             />
         ))}
 
@@ -191,7 +417,13 @@ export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = fals
             <div className="flex flex-col items-center justify-center p-12 text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-2xl bg-slate-50 dark:bg-slate-800/20">
                 <History size={48} className="opacity-20 mb-4" />
                 <p className="font-medium">No trade history found.</p>
-                <p className="text-sm mt-1">Import your trades via the 'Import Data' tab.</p>
+                <p className="text-sm mt-1">Import from Sheet or click "Add Trade".</p>
+                <button 
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="mt-4 text-blue-500 hover:text-blue-600 font-bold text-sm"
+                >
+                    + Create First Trade
+                </button>
             </div>
         )}
 

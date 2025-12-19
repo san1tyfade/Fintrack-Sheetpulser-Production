@@ -14,12 +14,15 @@ import { parseRawData } from './services/geminiService';
 import { fetchLiveRates } from './services/currencyService';
 import { reconcileInvestments } from './services/portfolioService';
 import { useIndexedDB } from './hooks/useIndexedDB';
+import { initGoogleAuth, isAuthInitialized } from './services/authService';
+import { addTradeToSheet, deleteTradeFromSheet } from './services/sheetWriteService';
 import { Loader2 } from 'lucide-react';
 
 // --- Configuration & Constants ---
 
 const DEFAULT_CONFIG: SheetConfig = {
   sheetId: '',
+  clientId: '',
   tabNames: {
     assets: 'Assets',
     investments: 'Investment Assets',
@@ -41,7 +44,6 @@ function App() {
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
   
   // Persistent Data State (IndexedDB)
-  // We destructure [value, setValue, isLoaded] from the hook
   const [assets, setAssets] = useIndexedDB<Asset[]>('fintrack_assets', []);
   const [investments, setInvestments] = useIndexedDB<Investment[]>('fintrack_investments', []);
   const [trades, setTrades] = useIndexedDB<Trade[]>('fintrack_trades', []);
@@ -88,6 +90,7 @@ function App() {
 
   const toggleTheme = useCallback(() => setIsDarkMode(prev => !prev), [setIsDarkMode]);
 
+  // Initialize Global Services
   useEffect(() => {
     const initRates = async () => {
         const rates = await fetchLiveRates();
@@ -96,6 +99,13 @@ function App() {
     initRates();
   }, []);
 
+  // Initialize Auth Client on Load if configured
+  useEffect(() => {
+    if (sheetConfig.clientId && !isAuthInitialized() && window.google) {
+        initGoogleAuth(sheetConfig.clientId);
+    }
+  }, [sheetConfig.clientId]);
+
   // Update config when URL input changes
   useEffect(() => {
     if (!configLoaded) return;
@@ -103,32 +113,32 @@ function App() {
     if (id && id !== sheetConfig.sheetId) {
         setSheetConfig(prev => ({ ...prev, sheetId: id }));
     } else if (sheetConfig.sheetId && !sheetUrl) {
-        // If config has ID but URL input is empty (e.g. fresh load), populate URL
-        setSheetUrl(sheetConfig.sheetId); // Just showing ID is fine, or we could reconstruct URL
+        setSheetUrl(sheetConfig.sheetId);
     }
   }, [sheetUrl, sheetConfig.sheetId, setSheetConfig, configLoaded, setSheetUrl]);
 
   const syncData = useCallback(async (specificTabs?: (keyof SheetConfig['tabNames'])[]) => {
     if (!sheetConfig.sheetId) return;
 
-    // Determine what to sync: explicit list or all keys
+    setIsSyncing(true);
+    setSyncStatus(null);
+    
+    // Determine what to sync
     const allKeys = Object.keys(sheetConfig.tabNames) as (keyof SheetConfig['tabNames'])[];
     const targets = specificTabs && specificTabs.length > 0 ? specificTabs : allKeys;
     const isFullSync = targets.length === allKeys.length;
 
-    setIsSyncing(true);
     setSyncingTabs(prev => {
         const next = new Set(prev);
         targets.forEach(t => next.add(t));
         return next;
     });
-    setSyncStatus(null);
     
     // Helper to fetch and parse
     const fetchSafe = async <T,>(tabName: string, type: 'assets' | 'investments' | 'trades' | 'subscriptions' | 'accounts' | 'logData' | 'debt' | 'income' | 'detailedExpenses'): Promise<T> => {
         try {
-            const txt = await fetchSheetData(sheetConfig.sheetId, tabName);
-            return await parseRawData<T>(txt, type);
+            const rawData = await fetchSheetData(sheetConfig.sheetId, tabName);
+            return await parseRawData<T>(rawData, type);
         } catch (e) {
             console.warn(`[Sync] ${type} failed for tab ${tabName}:`, e);
             if (type === 'income') return { income: [], expenses: [] } as unknown as T;
@@ -137,43 +147,25 @@ function App() {
         }
     };
 
-    // Processor for individual keys
     const processKey = async (key: keyof SheetConfig['tabNames']) => {
         const tabName = sheetConfig.tabNames[key];
         if (!tabName) return;
 
         try {
             switch (key) {
-                case 'assets':
-                    const rawAssets = await fetchSafe<Asset[]>(tabName, 'assets');
-                    setAssets(rawAssets);
-                    break;
-                case 'investments':
-                    setInvestments(await fetchSafe(tabName, 'investments'));
-                    break;
-                case 'trades':
-                    setTrades(await fetchSafe(tabName, 'trades'));
-                    break;
-                case 'subscriptions':
-                    setSubscriptions(await fetchSafe(tabName, 'subscriptions'));
-                    break;
-                case 'accounts':
-                    setAccounts(await fetchSafe(tabName, 'accounts'));
-                    break;
-                case 'logData':
-                    setNetWorthHistory(await fetchSafe(tabName, 'logData'));
-                    break;
-                case 'debt':
-                    setDebtEntries(await fetchSafe(tabName, 'debt'));
-                    break;
+                case 'assets': setAssets(await fetchSafe<Asset[]>(tabName, 'assets')); break;
+                case 'investments': setInvestments(await fetchSafe(tabName, 'investments')); break;
+                case 'trades': setTrades(await fetchSafe(tabName, 'trades')); break;
+                case 'subscriptions': setSubscriptions(await fetchSafe(tabName, 'subscriptions')); break;
+                case 'accounts': setAccounts(await fetchSafe(tabName, 'accounts')); break;
+                case 'logData': setNetWorthHistory(await fetchSafe(tabName, 'logData')); break;
+                case 'debt': setDebtEntries(await fetchSafe(tabName, 'debt')); break;
                 case 'income':
                     const finData = await fetchSafe<IncomeAndExpenses>(tabName, 'income');
                     setIncomeData(finData.income);
                     setExpenseData(finData.expenses);
                     break;
-                case 'expenses':
-                    setDetailedExpenses(await fetchSafe(tabName, 'detailedExpenses'));
-                    break;
+                case 'expenses': setDetailedExpenses(await fetchSafe(tabName, 'detailedExpenses')); break;
             }
         } finally {
             setSyncingTabs(prev => {
@@ -185,10 +177,8 @@ function App() {
     };
 
     try {
-        // Execute fetches in parallel
         await Promise.all(targets.map(key => processKey(key)));
         
-        // Update global status if this was a user-initiated sync (always true here)
         const now = new Date();
         if (isFullSync) {
              setLastUpdatedStr(now.toISOString());
@@ -204,22 +194,36 @@ function App() {
     }
   }, [sheetConfig, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setDebtEntries, setIncomeData, setExpenseData, setDetailedExpenses, setLastUpdatedStr]);
 
-  // Auto-sync on stale
-  useEffect(() => {
-    if (!sheetConfig.sheetId || !configLoaded) return;
-    const checkStale = () => {
-        const now = new Date();
-        const isStale = !lastUpdated || (now.getTime() - lastUpdated.getTime() > STALE_THRESHOLD_MS);
-        if (isStale && !isSyncing) {
-            syncData(); // Full sync on stale
-        }
-    };
-    const timer = setTimeout(checkStale, 1000);
-    return () => clearTimeout(timer);
-  }, [sheetConfig.sheetId, lastUpdated, syncData, isSyncing, configLoaded]);
+  const handleAddTrade = useCallback(async (newTrade: Trade) => {
+    if (!sheetConfig.sheetId || !sheetConfig.tabNames.trades) {
+        throw new Error("Cannot add trade: Trades tab not configured or Sheet ID missing.");
+    }
+    
+    // 1. Write to Google Sheet
+    await addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, newTrade);
+    
+    // 2. IMPORTANT: Sync Trades immediately to fetch the new row index.
+    // This ensures the new trade becomes deletable right away.
+    await syncData(['trades']);
+  }, [sheetConfig, syncData]);
 
-  // Wait for critical config to load from DB before rendering app
-  // This prevents the "Setup" screen from flashing if data actually exists in DB
+  const handleDeleteTrade = useCallback(async (trade: Trade) => {
+      if (!sheetConfig.sheetId || !sheetConfig.tabNames.trades) {
+          throw new Error("Cannot delete: Config missing.");
+      }
+      if (trade.rowIndex === undefined) {
+          throw new Error("Cannot delete: Row Index missing (try syncing first).");
+      }
+
+      // 1. Delete from Sheet
+      await deleteTradeFromSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, trade.rowIndex);
+
+      // 2. Sync to update indices for all subsequent rows
+      // Deleting a row shifts all subsequent rows up, invalidating their indices.
+      // A full sync is safer than a local optimistic update for deletion.
+      await syncData(['trades']);
+  }, [sheetConfig, syncData]);
+
   if (!configLoaded || !themeLoaded) {
       return (
           <div className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-900 text-slate-400">
@@ -272,7 +276,12 @@ function App() {
             />
           )}
           {currentView === ViewState.TRADES && (
-            <TradesList trades={trades} isLoading={isSyncing} />
+            <TradesList 
+                trades={trades} 
+                isLoading={isSyncing} 
+                onAddTrade={handleAddTrade}
+                onDeleteTrade={handleDeleteTrade}
+            />
           )}
           {currentView === ViewState.INCOME && (
             <IncomeView 
