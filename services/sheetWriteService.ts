@@ -184,3 +184,34 @@ export const deleteRowFromSheet = async (sheetId: string, tabName: string, rowIn
     if (!res.ok) throw new Error("Failed to delete row.");
     return true;
 };
+
+// Helper to convert index 0 -> B, 1 -> C, etc. (Since A is Name)
+const getColumnLetter = (index: number) => {
+    // Assuming max 26 columns for now (A-Z).
+    // Month index 0 = Jan = Column B.
+    // So 0 -> B (code 66).
+    return String.fromCharCode(66 + index);
+};
+
+export const updateExpenseValue = async (sheetId: string, tabName: string, rowIndex: number, monthIndex: number, value: number) => {
+    const token = getAccessToken();
+    if (!token) throw new Error("Authentication required.");
+    
+    // rowIndex is 0-based index of the line in the file.
+    // Sheet API is 1-based for rows.
+    const rowNum = rowIndex + 1;
+    
+    // monthIndex 0 = Jan. In the sheet, Jan is typically the 2nd column (Col B), so index + 1 (if 0-based A=0, B=1).
+    // A1 Notation: B5
+    const colLetter = getColumnLetter(monthIndex); 
+    const range = encodeURIComponent(`${tabName}!${colLetter}${rowNum}`);
+    
+    const res = await fetch(`${BASE_URL}/${sheetId}/values/${range}?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [[value]] })
+    });
+    
+    if (!res.ok) throw new Error("Failed to update cell.");
+    return true;
+};

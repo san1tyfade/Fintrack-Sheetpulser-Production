@@ -95,12 +95,14 @@ export interface ExpenseSubCategory {
   name: string;
   monthlyValues: number[]; // Index 0 = Jan, 11 = Dec
   total: number;
+  rowIndex?: number; // Added for editing
 }
 
 export interface ExpenseCategory {
   name: string;
   subCategories: ExpenseSubCategory[];
   total: number;
+  rowIndex?: number; // Added for editing
 }
 
 export interface DetailedExpenseData {

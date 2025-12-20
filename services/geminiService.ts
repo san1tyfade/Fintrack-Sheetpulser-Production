@@ -374,6 +374,8 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
     const categories: ExpenseCategory[] = [];
     let headerIdx = -1;
     let bestMonthCount = 0;
+    
+    // Find Header Row
     for (let i = 0; i < Math.min(lines.length, 30); i++) {
         const row = parseCSVLine(lines[i]);
         let count = 0;
@@ -389,6 +391,8 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
              headerIdx = i;
         }
     }
+    
+    // Fallback logic for finding header
     if (headerIdx === -1 || bestMonthCount < 2) {
          for (let i = 0; i < lines.length; i++) {
             const row = parseCSVLine(lines[i]);
@@ -398,39 +402,56 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
             }
         }
     }
+    
     if (headerIdx === -1 || headerIdx >= lines.length - 1) return { months: [], categories: [] };
+    
     const headerRow = parseCSVLine(lines[headerIdx]);
     const months: string[] = [];
     for (let j = 1; j <= 12; j++) months.push(headerRow[j] ? headerRow[j].trim() : `Month ${j}`);
+    
     let currentCategory: ExpenseCategory | null = null;
+    
     for (let i = headerIdx + 1; i < lines.length; i++) {
         const row = parseCSVLine(lines[i]);
         const name = (row[0] || '').trim();
         const lowerName = name.toLowerCase();
+        
         if (!name) {
             if (currentCategory) { categories.push(currentCategory); currentCategory = null; }
             continue;
         }
+        
         if (!isSafeKey(name)) continue;
         if (name.toUpperCase() === 'TOTAL' || lowerName.includes('net income') || lowerName.includes('total monthly') || lowerName.includes('expense categorie')) continue;
+        
         const monthlyValues: number[] = [];
         let hasData = false;
         let totalRowSum = 0;
+        
         for (let j = 1; j <= 12; j++) {
             const val = parseNumber(row[j]);
             monthlyValues.push(val);
             if (val !== 0) hasData = true;
             totalRowSum += val;
         }
+        
         if (!hasData) {
+            // It's a header for a new category
             if (currentCategory) categories.push(currentCategory);
-            currentCategory = { name: name, subCategories: [], total: 0 };
+            currentCategory = { name: name, subCategories: [], total: 0, rowIndex: i };
         } else {
-            const subItem: ExpenseSubCategory = { name, monthlyValues, total: totalRowSum };
-            if (currentCategory) { currentCategory.subCategories.push(subItem); currentCategory.total += totalRowSum; }
-            else { categories.push({ name: name, subCategories: [subItem], total: totalRowSum }); }
+            // It's a data row
+            const subItem: ExpenseSubCategory = { name, monthlyValues, total: totalRowSum, rowIndex: i };
+            if (currentCategory) { 
+                currentCategory.subCategories.push(subItem); 
+                currentCategory.total += totalRowSum; 
+            } else { 
+                // Implicit category if none started yet
+                categories.push({ name: name, subCategories: [subItem], total: totalRowSum, rowIndex: i }); 
+            }
         }
     }
+    
     if (currentCategory && !categories.find(c => c.name === currentCategory?.name)) categories.push(currentCategory);
     return { months, categories };
 };

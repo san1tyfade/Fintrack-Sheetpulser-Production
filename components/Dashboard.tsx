@@ -19,6 +19,24 @@ interface DashboardProps {
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
 
+// --- Utilities ---
+
+/**
+ * Parses a YYYY-MM-DD string into a local Date object.
+ * This avoids the UTC off-by-one error in Western time zones like MST.
+ */
+const parseISOToLocal = (isoStr: string): Date => {
+    if (!isoStr) return new Date();
+    const parts = isoStr.split('-');
+    if (parts.length !== 3) return new Date(isoStr);
+    
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // JS months are 0-indexed
+    const day = parseInt(parts[2], 10);
+    
+    return new Date(year, month, day);
+};
+
 // --- Sub-Components ---
 
 const StatsCard = memo(({ 
@@ -88,12 +106,12 @@ const NetWorthChart = memo(({ data, isDarkMode }: { data: NetWorthEntry[], isDar
     const tooltipText = isDarkMode ? '#f1f5f9' : '#0f172a';
 
     const formatAxisDate = (str: string) => {
-        const d = new Date(str);
+        const d = parseISOToLocal(str);
         return isNaN(d.getTime()) ? str : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     };
     
     const formatTooltipDate = (label: string) => {
-         const d = new Date(label);
+         const d = parseISOToLocal(label);
          return isNaN(d.getTime()) ? label : d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
     };
 

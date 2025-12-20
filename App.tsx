@@ -19,7 +19,8 @@ import {
   addTradeToSheet, deleteRowFromSheet, updateTradeInSheet, 
   addAssetToSheet, updateAssetInSheet,
   addSubscriptionToSheet, updateSubscriptionInSheet,
-  addAccountToSheet, updateAccountInSheet
+  addAccountToSheet, updateAccountInSheet,
+  updateExpenseValue
 } from './services/sheetWriteService';
 import { Loader2 } from 'lucide-react';
 
@@ -150,7 +151,21 @@ function App() {
           {currentView === ViewState.ASSETS && <AssetsList assets={assets} isLoading={isSyncing} exchangeRates={exchangeRates} onAddAsset={a => addAssetToSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, a).then(() => syncData(['assets']))} onEditAsset={a => handleEditGeneric(a, sheetConfig.tabNames.assets, updateAssetInSheet, setAssets)} onDeleteAsset={a => handleDeleteGeneric(a, sheetConfig.tabNames.assets, setAssets)} />}
           {currentView === ViewState.INVESTMENTS && <InvestmentsList investments={calculatedInvestments} assets={assets} trades={trades} isLoading={isSyncing} exchangeRates={exchangeRates} />}
           {currentView === ViewState.TRADES && <TradesList trades={trades} isLoading={isSyncing} onAddTrade={t => addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, t).then(() => syncData(['trades']))} onEditTrade={t => handleEditGeneric(t, sheetConfig.tabNames.trades, updateTradeInSheet, setTrades)} onDeleteTrade={t => handleDeleteGeneric(t, sheetConfig.tabNames.trades, setTrades)} />}
-          {currentView === ViewState.INCOME && <IncomeView incomeData={incomeData} expenseData={expenseData} detailedExpenses={detailedExpenses} isLoading={isSyncing} isDarkMode={isDarkMode} />}
+          {currentView === ViewState.INCOME && (
+            <IncomeView 
+                incomeData={incomeData} 
+                expenseData={expenseData} 
+                detailedExpenses={detailedExpenses} 
+                isLoading={isSyncing} 
+                isDarkMode={isDarkMode}
+                onUpdateExpense={async (rowIndex, monthIndex, value) => {
+                    if (!sheetConfig.sheetId || !sheetConfig.tabNames.expenses) throw new Error("Missing config for expenses tab.");
+                    await updateExpenseValue(sheetConfig.sheetId, sheetConfig.tabNames.expenses, rowIndex, monthIndex, value);
+                    // Silent background refresh for expenses
+                    syncData(['expenses']);
+                }}
+            />
+          )}
           {currentView === ViewState.INFORMATION && (
             <InformationView 
               subscriptions={subscriptions} accounts={accounts} debtEntries={debtEntries} isLoading={isSyncing}
