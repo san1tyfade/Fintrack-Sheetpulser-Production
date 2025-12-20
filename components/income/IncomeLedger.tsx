@@ -6,10 +6,10 @@ import { Loader2, AlertCircle, Check, Save } from 'lucide-react';
 interface IncomeLedgerProps {
   data: DetailedExpenseData;
   isLoading: boolean;
-  onUpdateValue: (rowIndex: number, monthIndex: number, newValue: number) => Promise<void>;
+  onUpdateValue: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
 }
 
-const EditableCell = ({ value, rowIndex, monthIndex, onSave }: { value: number, rowIndex: number, monthIndex: number, onSave: (r: number, m: number, v: number) => Promise<void> }) => {
+const EditableCell = ({ value, onSave }: { value: number, onSave: (v: number) => Promise<void> }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [tempValue, setTempValue] = useState(value.toString());
     const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
@@ -51,7 +51,7 @@ const EditableCell = ({ value, rowIndex, monthIndex, onSave }: { value: number, 
         setStatus('saving');
         setIsEditing(false); // Optimistically close input
         try {
-            await onSave(rowIndex, monthIndex, num);
+            await onSave(num);
             setStatus('success');
             setTimeout(() => setStatus('idle'), 2000);
         } catch (e) {
@@ -65,11 +65,12 @@ const EditableCell = ({ value, rowIndex, monthIndex, onSave }: { value: number, 
         return (
             <input
                 ref={inputRef}
-                type="text" // Use text to allow empty temporary state while typing
+                type="text" 
                 value={tempValue}
                 onChange={(e) => setTempValue(e.target.value)}
                 onBlur={save}
                 onKeyDown={handleKeyDown}
+                onFocus={(e) => e.target.select()}
                 className="w-full h-full text-right px-2 py-1 bg-blue-50 dark:bg-blue-900/30 outline-none border border-blue-500 rounded-sm font-mono text-sm"
             />
         );
@@ -88,7 +89,6 @@ const EditableCell = ({ value, rowIndex, monthIndex, onSave }: { value: number, 
             {status === 'success' && <Check size={12} className="absolute top-1 right-1 text-emerald-500" />}
             {status === 'error' && <AlertCircle size={12} className="absolute top-1 right-1 text-red-500" />}
             
-            {/* Visual hint on hover */}
             <div className="absolute inset-0 border border-transparent group-hover:border-slate-200 dark:group-hover:border-slate-700 pointer-events-none" />
         </div>
     );
@@ -124,16 +124,14 @@ export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ data, isLoading, onU
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                        {data.categories.map((cat, catIdx) => (
+                        {data.categories.map((cat) => (
                             <React.Fragment key={cat.name}>
                                 {/* Category Header Row */}
                                 <tr className="bg-slate-100 dark:bg-slate-800/60 font-bold">
                                     <td className="p-3 text-sm text-slate-800 dark:text-slate-200 border-r border-slate-200 dark:border-slate-700 sticky left-0 bg-slate-100 dark:bg-slate-800/60 z-10">
                                         {cat.name}
                                     </td>
-                                    {/* Category Totals (Not Editable directly usually, but calculated) */}
                                     {data.months.map((_, mIdx) => {
-                                        // Calculate total for this month for this category
                                         const total = cat.subCategories.reduce((acc, sub) => acc + (sub.monthlyValues[mIdx] || 0), 0);
                                         return (
                                             <td key={mIdx} className="p-3 text-right text-sm text-slate-500 dark:text-slate-400 font-mono">
@@ -147,25 +145,17 @@ export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ data, isLoading, onU
                                 </tr>
 
                                 {/* Subcategory Rows */}
-                                {cat.subCategories.map((sub, subIdx) => (
+                                {cat.subCategories.map((sub) => (
                                     <tr key={`${cat.name}-${sub.name}`} className="bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                                         <td className="pl-6 pr-3 py-0 text-sm text-slate-600 dark:text-slate-300 border-r border-slate-200 dark:border-slate-700 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/30 z-10 truncate max-w-[200px]" title={sub.name}>
                                             {sub.name}
                                         </td>
                                         {data.months.map((_, mIdx) => (
                                             <td key={mIdx} className="p-0 border-r border-slate-100 dark:border-slate-800 last:border-0">
-                                                {sub.rowIndex !== undefined ? (
-                                                    <EditableCell 
-                                                        value={sub.monthlyValues[mIdx] || 0} 
-                                                        rowIndex={sub.rowIndex}
-                                                        monthIndex={mIdx}
-                                                        onSave={onUpdateValue}
-                                                    />
-                                                ) : (
-                                                    <div className="px-2 py-3 text-right text-slate-300 text-sm cursor-not-allowed">
-                                                        {sub.monthlyValues[mIdx] || 0}
-                                                    </div>
-                                                )}
+                                                <EditableCell 
+                                                    value={sub.monthlyValues[mIdx] || 0} 
+                                                    onSave={(val) => onUpdateValue(cat.name, sub.name, mIdx, val)}
+                                                />
                                             </td>
                                         ))}
                                         <td className="p-3 text-right text-sm font-bold text-slate-700 dark:text-slate-300 font-mono bg-slate-50/50 dark:bg-slate-900">
@@ -179,11 +169,10 @@ export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ data, isLoading, onU
                 </table>
             </div>
             
-            {/* Footer / Legend */}
             <div className="p-3 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center text-xs text-slate-500">
                 <div className="flex items-center gap-4">
                     <span className="flex items-center gap-1"><Save size={12} /> Auto-saves on Enter/Blur</span>
-                    <span>Cells map directly to Sheet rows</span>
+                    <span>Values update based on Category Name</span>
                 </div>
                 {isLoading && <span className="flex items-center gap-2 text-blue-500"><Loader2 size={12} className="animate-spin" /> Syncing...</span>}
             </div>

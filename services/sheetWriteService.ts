@@ -193,16 +193,65 @@ const getColumnLetter = (index: number) => {
     return String.fromCharCode(66 + index);
 };
 
-export const updateExpenseValue = async (sheetId: string, tabName: string, rowIndex: number, monthIndex: number, value: number) => {
+/**
+ * Updates a cell by searching for the row where Column A matches the specific Category/SubCategory structure.
+ * This is much safer than relying on row index, especially when empty rows are stripped by parsers.
+ */
+export const updateExpenseValue = async (sheetId: string, tabName: string, category: string, subCategory: string, monthIndex: number, value: number) => {
     const token = getAccessToken();
     if (!token) throw new Error("Authentication required.");
+
+    // 1. Fetch Column A to find the correct row (using the V4 API which respects all rows)
+    const colARange = encodeURIComponent(`${tabName}!A:A`);
+    const searchRes = await fetch(`${BASE_URL}/${sheetId}/values/${colARange}`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (!searchRes.ok) throw new Error("Failed to scan sheet for row.");
+    const searchData = await searchRes.json();
+    const rows = searchData.values || [];
+
+    // 2. Scan for the specific category block and then the sub-item
+    let targetRowIndex = -1;
+    let foundCategory = false;
     
-    // rowIndex is 0-based index of the line in the file.
-    // Sheet API is 1-based for rows.
-    const rowNum = rowIndex + 1;
-    
-    // monthIndex 0 = Jan. In the sheet, Jan is typically the 2nd column (Col B), so index + 1 (if 0-based A=0, B=1).
-    // A1 Notation: B5
+    // Normalize logic similar to parser
+    const norm = (s: string) => (s || '').trim().toLowerCase();
+
+    for (let i = 0; i < rows.length; i++) {
+        const cell = rows[i][0] ? rows[i][0].toString() : '';
+        const nCell = norm(cell);
+
+        // Header Detection (Optional, but good for context)
+        if (!foundCategory && nCell === norm(category)) {
+            foundCategory = true;
+            // If the subCategory IS the category (implicit single-row), check if this is the only one.
+            // But usually the sub-items follow.
+        }
+
+        if (foundCategory) {
+            if (nCell === norm(subCategory)) {
+                targetRowIndex = i;
+                break;
+            }
+            // If we hit the NEXT category, stop (safety check)
+            // This relies on knowing the next category, which we don't, 
+            // so we rely on the first match of subCategory AFTER category header.
+        }
+    }
+
+    // Fallback: If we couldn't find the structure (maybe implicit category row), 
+    // just find the first row that matches the subCategory name exactly.
+    if (targetRowIndex === -1) {
+        targetRowIndex = rows.findIndex((r: any[]) => norm(r[0]) === norm(subCategory));
+    }
+
+    if (targetRowIndex === -1) {
+        throw new Error(`Could not find row for '${subCategory}' in sheet.`);
+    }
+
+    // 3. Write to the specific cell
+    const rowNum = targetRowIndex + 1; // 1-based index for A1 notation
     const colLetter = getColumnLetter(monthIndex); 
     const range = encodeURIComponent(`${tabName}!${colLetter}${rowNum}`);
     

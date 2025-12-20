@@ -78,7 +78,11 @@ export const fetchSheetData = async (sheetId: string, tabName: string): Promise<
     const cleanId = extractSheetId(sheetId);
     if (!cleanId) throw new Error("Invalid Sheet ID");
 
-    const url = constructGvizUrl(cleanId, tabName);
+    // CRITICAL FIX: We explicitly request range 'A:ZZ' to force gviz to return the spreadsheet 
+    // starting from Row 1, even if the first few rows are empty. 
+    // Without this, gviz auto-trims leading empty rows, causing a mismatch between 
+    // CSV line numbers (0-based) and actual Sheet Row numbers (1-based).
+    const url = constructGvizUrl(cleanId, tabName, 'A:ZZ');
     
     const res = await fetch(url);
     

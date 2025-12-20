@@ -376,7 +376,8 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
     let bestMonthCount = 0;
     
     // Find Header Row
-    for (let i = 0; i < Math.min(lines.length, 30); i++) {
+    // Updated limit to 50 to accommodate forced A:ZZ range fetching which might include empty rows
+    for (let i = 0; i < Math.min(lines.length, 50); i++) {
         const row = parseCSVLine(lines[i]);
         let count = 0;
         for (let j = 1; j <= 12; j++) {

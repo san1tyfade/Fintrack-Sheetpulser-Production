@@ -11,7 +11,7 @@ interface IncomeViewProps {
   detailedExpenses?: DetailedExpenseData;
   isLoading?: boolean;
   isDarkMode?: boolean;
-  onUpdateExpense?: (rowIndex: number, monthIndex: number, newValue: number) => Promise<void>;
+  onUpdateExpense?: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
 }
 
 type ViewMode = 'ANALYSIS' | 'LEDGER';
@@ -72,8 +72,8 @@ export const IncomeView: React.FC<IncomeViewProps> = ({
                <IncomeLedger 
                    data={detailedExpenses || { months: [], categories: [] }} 
                    isLoading={isLoading} 
-                   onUpdateValue={async (r, m, v) => {
-                       if (onUpdateExpense) await onUpdateExpense(r, m, v);
+                   onUpdateValue={async (cat, sub, m, v) => {
+                       if (onUpdateExpense) await onUpdateExpense(cat, sub, m, v);
                    }} 
                 />
            )}

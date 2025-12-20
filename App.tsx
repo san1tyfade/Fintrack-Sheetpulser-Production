@@ -158,9 +158,9 @@ function App() {
                 detailedExpenses={detailedExpenses} 
                 isLoading={isSyncing} 
                 isDarkMode={isDarkMode}
-                onUpdateExpense={async (rowIndex, monthIndex, value) => {
+                onUpdateExpense={async (category, subCategory, monthIndex, value) => {
                     if (!sheetConfig.sheetId || !sheetConfig.tabNames.expenses) throw new Error("Missing config for expenses tab.");
-                    await updateExpenseValue(sheetConfig.sheetId, sheetConfig.tabNames.expenses, rowIndex, monthIndex, value);
+                    await updateExpenseValue(sheetConfig.sheetId, sheetConfig.tabNames.expenses, category, subCategory, monthIndex, value);
                     // Silent background refresh for expenses
                     syncData(['expenses']);
                 }}
