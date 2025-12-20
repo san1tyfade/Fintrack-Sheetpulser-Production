@@ -8,7 +8,7 @@ import { TradesList } from './components/TradesList';
 import { IncomeView } from './components/IncomeView';
 import { InformationView } from './components/InformationView';
 import { DataIngest } from './components/DataIngest';
-import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, DetailedExpenseData } from './types';
+import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, DetailedExpenseData, DetailedIncomeData } from './types';
 import { fetchSheetData, extractSheetId } from './services/sheetService';
 import { parseRawData } from './services/geminiService';
 import { fetchLiveRates } from './services/currencyService';
@@ -55,6 +55,7 @@ function App() {
   const [incomeData, setIncomeData] = useIndexedDB<IncomeEntry[]>('fintrack_income', []);
   const [expenseData, setExpenseData] = useIndexedDB<ExpenseEntry[]>('fintrack_expenses', []);
   const [detailedExpenses, setDetailedExpenses] = useIndexedDB<DetailedExpenseData>('fintrack_detailed_expenses', { months: [], categories: [] });
+  const [detailedIncome, setDetailedIncome] = useIndexedDB<DetailedIncomeData>('fintrack_detailed_income', { months: [], categories: [] });
 
   const [sheetConfig, setSheetConfig, configLoaded] = useIndexedDB<SheetConfig>('fintrack_sheet_config', DEFAULT_CONFIG);
   const [lastUpdatedStr, setLastUpdatedStr] = useIndexedDB<string | null>('fintrack_lastUpdated', null);
@@ -100,10 +101,18 @@ function App() {
     const targets = specificTabs && specificTabs.length > 0 ? specificTabs : allKeys;
     const isFullSync = targets.length === allKeys.length;
     setSyncingTabs(prev => { const next = new Set(prev); targets.forEach(t => next.add(t)); return next; });
+    
     const fetchSafe = async <T,>(tabName: string, type: any): Promise<T> => {
         try { const rawData = await fetchSheetData(sheetConfig.sheetId, tabName); return await parseRawData<T>(rawData, type); }
-        catch (e) { if (type === 'income') return { income: [], expenses: [] } as any; if (type === 'detailedExpenses') return { months: [], categories: [] } as any; return [] as any; }
+        catch (e) { 
+            console.error(`Sync error for ${type}:`, e);
+            if (type === 'income') return { income: [], expenses: [] } as any; 
+            if (type === 'detailedExpenses') return { months: [], categories: [] } as any; 
+            if (type === 'detailedIncome') return { months: [], categories: [] } as any; 
+            return [] as any; 
+        }
     };
+
     const processKey = async (key: keyof SheetConfig['tabNames']) => {
         const tabName = sheetConfig.tabNames[key];
         if (!tabName) return;
@@ -116,7 +125,17 @@ function App() {
                 case 'accounts': setAccounts(await fetchSafe(tabName, 'accounts')); break;
                 case 'logData': setNetWorthHistory(await fetchSafe(tabName, 'logData')); break;
                 case 'debt': setDebtEntries(await fetchSafe(tabName, 'debt')); break;
-                case 'income': const finData = await fetchSafe<IncomeAndExpenses>(tabName, 'income'); setIncomeData(finData.income); setExpenseData(finData.expenses); break;
+                case 'income': 
+                    // Parse both summary data (for dashboard) and detailed grid (for ledger) from the same tab if possible
+                    // Current behavior: `fetchSafe` parses based on type. 
+                    // We need to parse detailedIncome specifically.
+                    const finData = await fetchSafe<IncomeAndExpenses>(tabName, 'income'); 
+                    setIncomeData(finData.income); 
+                    setExpenseData(finData.expenses);
+                    
+                    const detIncome = await fetchSafe<DetailedIncomeData>(tabName, 'detailedIncome');
+                    setDetailedIncome(detIncome);
+                    break;
                 case 'expenses': setDetailedExpenses(await fetchSafe(tabName, 'detailedExpenses')); break;
             }
         } finally { setSyncingTabs(prev => { const next = new Set(prev); next.delete(key); return next; }); }
@@ -124,7 +143,7 @@ function App() {
     try { await Promise.all(targets.map(key => processKey(key))); setLastUpdatedStr(new Date().toISOString()); setSyncStatus({ type: 'success', msg: isFullSync ? 'Full sync complete' : 'Updated' }); }
     catch (e: any) { setSyncStatus({ type: 'error', msg: e.message || "Sync failed" }); }
     finally { setIsSyncing(false); }
-  }, [sheetConfig, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setDebtEntries, setIncomeData, setExpenseData, setDetailedExpenses, setLastUpdatedStr]);
+  }, [sheetConfig, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setDebtEntries, setIncomeData, setExpenseData, setDetailedExpenses, setDetailedIncome, setLastUpdatedStr]);
 
   // --- Handlers ---
 
@@ -155,14 +174,20 @@ function App() {
             <IncomeView 
                 incomeData={incomeData} 
                 expenseData={expenseData} 
-                detailedExpenses={detailedExpenses} 
+                detailedExpenses={detailedExpenses}
+                detailedIncome={detailedIncome} 
                 isLoading={isSyncing} 
                 isDarkMode={isDarkMode}
                 onUpdateExpense={async (category, subCategory, monthIndex, value) => {
                     if (!sheetConfig.sheetId || !sheetConfig.tabNames.expenses) throw new Error("Missing config for expenses tab.");
                     await updateExpenseValue(sheetConfig.sheetId, sheetConfig.tabNames.expenses, category, subCategory, monthIndex, value);
-                    // Silent background refresh for expenses
                     syncData(['expenses']);
+                }}
+                onUpdateIncome={async (category, subCategory, monthIndex, value) => {
+                    if (!sheetConfig.sheetId || !sheetConfig.tabNames.income) throw new Error("Missing config for income tab.");
+                    // Reusing the updateExpenseValue service as logic is identical (lookup by name in col A)
+                    await updateExpenseValue(sheetConfig.sheetId, sheetConfig.tabNames.income, category, subCategory, monthIndex, value);
+                    syncData(['income']);
                 }}
             />
           )}

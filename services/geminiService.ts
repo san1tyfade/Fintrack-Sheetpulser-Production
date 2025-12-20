@@ -1,5 +1,5 @@
 
-import { Asset, Investment, Trade, Subscription, BankAccount, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, DetailedExpenseData, ExpenseCategory, ExpenseSubCategory } from "../types";
+import { Asset, Investment, Trade, Subscription, BankAccount, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, DetailedExpenseData, DetailedIncomeData, ExpenseCategory, ExpenseSubCategory } from "../types";
 
 // --- Utilities ---
 
@@ -369,6 +369,103 @@ const createDebtParser = (headers: string[]) => {
     };
 };
 
+// --- Detailed Income Parser ---
+export const parseDetailedIncome = (lines: string[]): DetailedIncomeData => {
+    const categories: ExpenseCategory[] = []; // Reusing ExpenseCategory as structure is identical
+    
+    // As per user spec: "First two rows are empty".
+    // We expect header around index 2.
+    // However, A:ZZ fetch returns empty rows, so line 0, 1 are empty.
+    // Line 2 is potentially the header row (Month Names).
+    // Line 3+ is data.
+    
+    let headerIdx = -1;
+    let bestMonthCount = 0;
+
+    // Scan the first 10 lines to find the header row (Month names)
+    for (let i = 0; i < Math.min(lines.length, 10); i++) {
+        const row = parseCSVLine(lines[i]);
+        let count = 0;
+        // Count how many cells look like months
+        for (let j = 1; j <= 12; j++) {
+            const val = (row[j] || '').trim().toLowerCase();
+            if (val && MONTH_NAMES.some(m => val.startsWith(m))) count++;
+        }
+        
+        // Income headers often have empty A1, but filled B1..M1
+        if (count > bestMonthCount) {
+            bestMonthCount = count;
+            headerIdx = i;
+        }
+    }
+
+    if (headerIdx === -1 || headerIdx >= lines.length - 1) return { months: [], categories: [] };
+
+    const headerRow = parseCSVLine(lines[headerIdx]);
+    const months: string[] = [];
+    for (let j = 1; j <= 12; j++) months.push(headerRow[j] ? headerRow[j].trim() : `Month ${j}`);
+
+    const incomeSourceCategory: ExpenseCategory = {
+        name: 'Income Sources',
+        subCategories: [],
+        total: 0,
+        rowIndex: headerIdx
+    };
+
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+        const row = parseCSVLine(lines[i]);
+        const name = (row[0] || '').trim();
+        
+        // Stop if we encounter an empty row (end of table section)
+        if (!name) {
+            // If we have already collected data, an empty row signifies the end of this block
+            if (incomeSourceCategory.subCategories.length > 0) break;
+            continue; 
+        }
+        
+        if (!isSafeKey(name)) continue;
+        
+        const lowerName = name.toLowerCase();
+        
+        // Stop if we hit a 'Total' row, which usually concludes the income table
+        if (lowerName === 'total' || lowerName.includes('total income')) {
+            break;
+        }
+        
+        // Stop if we hit explicit expense headers (failsafe)
+        if (lowerName.includes('expense') || lowerName.includes('outgoing') || lowerName.includes('liabilities')) {
+            break;
+        }
+
+        const monthlyValues: number[] = [];
+        let rowTotal = 0;
+        let hasData = false;
+
+        for (let j = 1; j <= 12; j++) {
+            const val = parseNumber(row[j]);
+            monthlyValues.push(val);
+            rowTotal += val;
+            if (val !== 0) hasData = true;
+        }
+
+        if (hasData) {
+            incomeSourceCategory.subCategories.push({
+                name: name,
+                monthlyValues: monthlyValues,
+                total: rowTotal,
+                rowIndex: i
+            });
+            incomeSourceCategory.total += rowTotal;
+        }
+    }
+
+    if (incomeSourceCategory.subCategories.length > 0) {
+        categories.push(incomeSourceCategory);
+    }
+
+    return { months, categories };
+};
+
 // --- Detailed Expense Parser ---
 export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
     const categories: ExpenseCategory[] = [];
@@ -527,21 +624,24 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
 
 export const parseRawData = async <T,>(
   rawData: string,
-  dataType: 'assets' | 'investments' | 'trades' | 'subscriptions' | 'accounts' | 'logData' | 'debt' | 'income' | 'detailedExpenses'
+  dataType: 'assets' | 'investments' | 'trades' | 'subscriptions' | 'accounts' | 'logData' | 'debt' | 'income' | 'detailedExpenses' | 'detailedIncome'
 ): Promise<T> => {
   if (!rawData) {
       if (dataType === 'income') return { income: [], expenses: [] } as T;
       if (dataType === 'detailedExpenses') return { months: [], categories: [] } as T;
+      if (dataType === 'detailedIncome') return { months: [], categories: [] } as T;
       return [] as T;
   }
   const lines = rawData.split(/\r?\n/);
   if (lines.length < 2) {
       if (dataType === 'income') return { income: [], expenses: [] } as T;
       if (dataType === 'detailedExpenses') return { months: [], categories: [] } as T;
+      if (dataType === 'detailedIncome') return { months: [], categories: [] } as T;
       return [] as T; 
   }
   if (dataType === 'income') return parseIncomeAndExpenses(lines) as T;
   if (dataType === 'detailedExpenses') return parseDetailedExpenses(lines) as T;
+  if (dataType === 'detailedIncome') return parseDetailedIncome(lines) as T;
 
   // --- Robust Header Detection ---
   let headerIndex = -1;

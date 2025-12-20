@@ -1,12 +1,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { DetailedExpenseData } from '../../types';
+import { DetailedExpenseData, DetailedIncomeData } from '../../types';
 import { Loader2, AlertCircle, Check, Save } from 'lucide-react';
 
 interface IncomeLedgerProps {
-  data: DetailedExpenseData;
+  expenseData: DetailedExpenseData;
+  incomeData: DetailedIncomeData;
   isLoading: boolean;
-  onUpdateValue: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
+  onUpdateExpense: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
+  onUpdateIncome: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
 }
 
 const EditableCell = ({ value, onSave }: { value: number, onSave: (v: number) => Promise<void> }) => {
@@ -94,24 +96,27 @@ const EditableCell = ({ value, onSave }: { value: number, onSave: (v: number) =>
     );
 };
 
-export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ data, isLoading, onUpdateValue }) => {
+const LedgerTable = ({ title, data, themeColor, onUpdate }: { title: string, data: DetailedExpenseData | DetailedIncomeData, themeColor: 'emerald' | 'rose', onUpdate: (c: string, s: string, m: number, v: number) => Promise<void> }) => {
     
-    if (!data || data.categories.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center p-12 text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/10">
-                <p>No expense data loaded. Check your sheet connection.</p>
-            </div>
-        );
-    }
+    const theme = {
+        emerald: { header: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-900 dark:text-emerald-200', border: 'border-emerald-200 dark:border-emerald-800', badge: 'bg-emerald-500' },
+        rose: { header: 'bg-rose-100 dark:bg-rose-900/30 text-rose-900 dark:text-rose-200', border: 'border-rose-200 dark:border-rose-800', badge: 'bg-rose-500' }
+    }[themeColor];
+
+    if (!data || data.categories.length === 0) return null;
 
     return (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm animate-fade-in flex flex-col h-[calc(100vh-200px)]">
-            <div className="flex-1 overflow-auto relative">
+        <div className="mb-8 last:mb-0">
+            <div className={`px-4 py-2 text-sm font-bold uppercase tracking-wider flex items-center gap-2 ${theme.header} rounded-t-xl`}>
+                <div className={`w-2 h-2 rounded-full ${theme.badge}`} />
+                {title}
+            </div>
+            <div className={`overflow-x-auto border-x border-b ${theme.border} rounded-b-xl`}>
                 <table className="w-full border-collapse">
-                    <thead className="bg-slate-50 dark:bg-slate-800 sticky top-0 z-10 shadow-sm">
+                    <thead>
                         <tr>
-                            <th className="p-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-r border-slate-200 dark:border-slate-700 min-w-[200px] sticky left-0 bg-slate-50 dark:bg-slate-800 z-20">
-                                Category / Item
+                            <th className="p-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-r border-slate-200 dark:border-slate-700 min-w-[200px] sticky left-0 bg-white dark:bg-slate-900 z-20">
+                                Source / Category
                             </th>
                             {data.months.map((m, idx) => (
                                 <th key={idx} className="p-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 min-w-[100px]">
@@ -127,8 +132,8 @@ export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ data, isLoading, onU
                         {data.categories.map((cat) => (
                             <React.Fragment key={cat.name}>
                                 {/* Category Header Row */}
-                                <tr className="bg-slate-100 dark:bg-slate-800/60 font-bold">
-                                    <td className="p-3 text-sm text-slate-800 dark:text-slate-200 border-r border-slate-200 dark:border-slate-700 sticky left-0 bg-slate-100 dark:bg-slate-800/60 z-10">
+                                <tr className="bg-slate-50/80 dark:bg-slate-800/40 font-bold">
+                                    <td className="p-3 text-sm text-slate-800 dark:text-slate-200 border-r border-slate-200 dark:border-slate-700 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10">
                                         {cat.name}
                                     </td>
                                     {data.months.map((_, mIdx) => {
@@ -154,7 +159,7 @@ export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ data, isLoading, onU
                                             <td key={mIdx} className="p-0 border-r border-slate-100 dark:border-slate-800 last:border-0">
                                                 <EditableCell 
                                                     value={sub.monthlyValues[mIdx] || 0} 
-                                                    onSave={(val) => onUpdateValue(cat.name, sub.name, mIdx, val)}
+                                                    onSave={(val) => onUpdate(cat.name, sub.name, mIdx, val)}
                                                 />
                                             </td>
                                         ))}
@@ -168,11 +173,34 @@ export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ data, isLoading, onU
                     </tbody>
                 </table>
             </div>
+        </div>
+    );
+}
+
+export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ expenseData, incomeData, isLoading, onUpdateExpense, onUpdateIncome }) => {
+    
+    const hasExpense = expenseData && expenseData.categories.length > 0;
+    const hasIncome = incomeData && incomeData.categories.length > 0;
+
+    if (!hasExpense && !hasIncome) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/10">
+                <p>No ledger data loaded. Check your sheet connection.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm animate-fade-in flex flex-col h-[calc(100vh-200px)]">
+            <div className="flex-1 overflow-auto p-4">
+                <LedgerTable title="Income Ledger" data={incomeData} themeColor="emerald" onUpdate={onUpdateIncome} />
+                <LedgerTable title="Expense Ledger" data={expenseData} themeColor="rose" onUpdate={onUpdateExpense} />
+            </div>
             
             <div className="p-3 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center text-xs text-slate-500">
                 <div className="flex items-center gap-4">
                     <span className="flex items-center gap-1"><Save size={12} /> Auto-saves on Enter/Blur</span>
-                    <span>Values update based on Category Name</span>
+                    <span>Edits are written to exact rows in sheet</span>
                 </div>
                 {isLoading && <span className="flex items-center gap-2 text-blue-500"><Loader2 size={12} className="animate-spin" /> Syncing...</span>}
             </div>

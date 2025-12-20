@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { IncomeEntry, ExpenseEntry, DetailedExpenseData } from '../types';
+import { IncomeEntry, ExpenseEntry, DetailedExpenseData, DetailedIncomeData } from '../types';
 import { IncomeAnalysis } from './income/IncomeAnalysis';
 import { IncomeLedger } from './income/IncomeLedger';
 import { Loader2, BarChart3, Table2 } from 'lucide-react';
@@ -9,9 +9,11 @@ interface IncomeViewProps {
   incomeData: IncomeEntry[];
   expenseData: ExpenseEntry[];
   detailedExpenses?: DetailedExpenseData;
+  detailedIncome?: DetailedIncomeData;
   isLoading?: boolean;
   isDarkMode?: boolean;
   onUpdateExpense?: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
+  onUpdateIncome?: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
 }
 
 type ViewMode = 'ANALYSIS' | 'LEDGER';
@@ -20,9 +22,11 @@ export const IncomeView: React.FC<IncomeViewProps> = ({
     incomeData, 
     expenseData, 
     detailedExpenses, 
+    detailedIncome,
     isLoading = false, 
     isDarkMode = true,
-    onUpdateExpense 
+    onUpdateExpense,
+    onUpdateIncome
 }) => {
   const [mode, setMode] = useState<ViewMode>('ANALYSIS');
 
@@ -70,11 +74,15 @@ export const IncomeView: React.FC<IncomeViewProps> = ({
                 />
            ) : (
                <IncomeLedger 
-                   data={detailedExpenses || { months: [], categories: [] }} 
+                   expenseData={detailedExpenses || { months: [], categories: [] }} 
+                   incomeData={detailedIncome || { months: [], categories: [] }}
                    isLoading={isLoading} 
-                   onUpdateValue={async (cat, sub, m, v) => {
+                   onUpdateExpense={async (cat, sub, m, v) => {
                        if (onUpdateExpense) await onUpdateExpense(cat, sub, m, v);
                    }} 
+                   onUpdateIncome={async (cat, sub, m, v) => {
+                       if (onUpdateIncome) await onUpdateIncome(cat, sub, m, v);
+                   }}
                 />
            )}
        </div>

@@ -110,6 +110,12 @@ export interface DetailedExpenseData {
     categories: ExpenseCategory[];
 }
 
+// Reusing the same structure for consistency, though 'categories' might just be 'sources'
+export interface DetailedIncomeData {
+    months: string[];
+    categories: ExpenseCategory[]; 
+}
+
 export interface SheetConfig {
   sheetId: string;
   clientId: string; // Added for OAuth
