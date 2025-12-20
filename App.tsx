@@ -8,7 +8,7 @@ import { TradesList } from './components/TradesList';
 import { IncomeView } from './components/IncomeView';
 import { InformationView } from './components/InformationView';
 import { DataIngest } from './components/DataIngest';
-import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, DetailedExpenseData, DetailedIncomeData } from './types';
+import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData } from './types';
 import { fetchSheetData, extractSheetId } from './services/sheetService';
 import { parseRawData } from './services/geminiService';
 import { fetchLiveRates } from './services/currencyService';
@@ -20,7 +20,7 @@ import {
   addAssetToSheet, updateAssetInSheet,
   addSubscriptionToSheet, updateSubscriptionInSheet,
   addAccountToSheet, updateAccountInSheet,
-  updateExpenseValue
+  updateLedgerValue
 } from './services/sheetWriteService';
 import { Loader2 } from 'lucide-react';
 
@@ -54,8 +54,8 @@ function App() {
   const [netWorthHistory, setNetWorthHistory] = useIndexedDB<NetWorthEntry[]>('fintrack_history', []);
   const [incomeData, setIncomeData] = useIndexedDB<IncomeEntry[]>('fintrack_income', []);
   const [expenseData, setExpenseData] = useIndexedDB<ExpenseEntry[]>('fintrack_expenses', []);
-  const [detailedExpenses, setDetailedExpenses] = useIndexedDB<DetailedExpenseData>('fintrack_detailed_expenses', { months: [], categories: [] });
-  const [detailedIncome, setDetailedIncome] = useIndexedDB<DetailedIncomeData>('fintrack_detailed_income', { months: [], categories: [] });
+  const [detailedExpenses, setDetailedExpenses] = useIndexedDB<LedgerData>('fintrack_detailed_expenses', { months: [], categories: [] });
+  const [detailedIncome, setDetailedIncome] = useIndexedDB<LedgerData>('fintrack_detailed_income', { months: [], categories: [] });
 
   const [sheetConfig, setSheetConfig, configLoaded] = useIndexedDB<SheetConfig>('fintrack_sheet_config', DEFAULT_CONFIG);
   const [lastUpdatedStr, setLastUpdatedStr] = useIndexedDB<string | null>('fintrack_lastUpdated', null);
@@ -133,7 +133,7 @@ function App() {
                     setIncomeData(finData.income); 
                     setExpenseData(finData.expenses);
                     
-                    const detIncome = await fetchSafe<DetailedIncomeData>(tabName, 'detailedIncome');
+                    const detIncome = await fetchSafe<LedgerData>(tabName, 'detailedIncome');
                     setDetailedIncome(detIncome);
                     break;
                 case 'expenses': setDetailedExpenses(await fetchSafe(tabName, 'detailedExpenses')); break;
@@ -180,13 +180,12 @@ function App() {
                 isDarkMode={isDarkMode}
                 onUpdateExpense={async (category, subCategory, monthIndex, value) => {
                     if (!sheetConfig.sheetId || !sheetConfig.tabNames.expenses) throw new Error("Missing config for expenses tab.");
-                    await updateExpenseValue(sheetConfig.sheetId, sheetConfig.tabNames.expenses, category, subCategory, monthIndex, value);
+                    await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.expenses, category, subCategory, monthIndex, value);
                     syncData(['expenses']);
                 }}
                 onUpdateIncome={async (category, subCategory, monthIndex, value) => {
                     if (!sheetConfig.sheetId || !sheetConfig.tabNames.income) throw new Error("Missing config for income tab.");
-                    // Reusing the updateExpenseValue service as logic is identical (lookup by name in col A)
-                    await updateExpenseValue(sheetConfig.sheetId, sheetConfig.tabNames.income, category, subCategory, monthIndex, value);
+                    await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.income, category, subCategory, monthIndex, value);
                     syncData(['income']);
                 }}
             />

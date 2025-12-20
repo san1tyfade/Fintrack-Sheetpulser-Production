@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { IncomeEntry, ExpenseEntry, DetailedExpenseData } from '../../types';
+import { IncomeEntry, ExpenseEntry, LedgerData } from '../../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend, Sankey, Layer, Rectangle } from 'recharts';
 import { BadgeDollarSign, TrendingUp, TrendingDown, CreditCard, Activity, GitMerge, BarChart2, X, Percent } from 'lucide-react';
 import { formatBaseCurrency } from '../../services/currencyService';
@@ -8,7 +8,7 @@ import { formatBaseCurrency } from '../../services/currencyService';
 interface IncomeAnalysisProps {
   incomeData: IncomeEntry[];
   expenseData: ExpenseEntry[];
-  detailedExpenses?: DetailedExpenseData;
+  detailedExpenses?: LedgerData;
   isLoading?: boolean;
   isDarkMode?: boolean;
 }

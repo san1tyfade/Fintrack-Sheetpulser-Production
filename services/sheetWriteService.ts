@@ -195,9 +195,9 @@ const getColumnLetter = (index: number) => {
 
 /**
  * Updates a cell by searching for the row where Column A matches the specific Category/SubCategory structure.
- * This is much safer than relying on row index, especially when empty rows are stripped by parsers.
+ * This is used for both Income and Expense ledgers.
  */
-export const updateExpenseValue = async (sheetId: string, tabName: string, category: string, subCategory: string, monthIndex: number, value: number) => {
+export const updateLedgerValue = async (sheetId: string, tabName: string, category: string, subCategory: string, monthIndex: number, value: number) => {
     const token = getAccessToken();
     if (!token) throw new Error("Authentication required.");
 
@@ -234,9 +234,6 @@ export const updateExpenseValue = async (sheetId: string, tabName: string, categ
                 targetRowIndex = i;
                 break;
             }
-            // If we hit the NEXT category, stop (safety check)
-            // This relies on knowing the next category, which we don't, 
-            // so we rely on the first match of subCategory AFTER category header.
         }
     }
 

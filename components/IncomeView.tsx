@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { IncomeEntry, ExpenseEntry, DetailedExpenseData, DetailedIncomeData } from '../types';
+import { IncomeEntry, ExpenseEntry, LedgerData } from '../types';
 import { IncomeAnalysis } from './income/IncomeAnalysis';
 import { IncomeLedger } from './income/IncomeLedger';
 import { Loader2, BarChart3, Table2 } from 'lucide-react';
@@ -8,8 +8,8 @@ import { Loader2, BarChart3, Table2 } from 'lucide-react';
 interface IncomeViewProps {
   incomeData: IncomeEntry[];
   expenseData: ExpenseEntry[];
-  detailedExpenses?: DetailedExpenseData;
-  detailedIncome?: DetailedIncomeData;
+  detailedExpenses?: LedgerData;
+  detailedIncome?: LedgerData;
   isLoading?: boolean;
   isDarkMode?: boolean;
   onUpdateExpense?: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;

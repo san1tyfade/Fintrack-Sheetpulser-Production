@@ -177,7 +177,8 @@ const AssetCard = memo(({ asset, exchangeRates, isLoading, onDelete, onEdit }: {
     const [isDeleting, setIsDeleting] = useState(false);
     const canEdit = asset.rowIndex !== undefined;
 
-    const handleDelete = async () => {
+    const handleDelete = async (e: React.MouseEvent) => {
+        e.stopPropagation();
         if (!onDelete) return;
         if (!confirm(`Are you sure you want to delete "${asset.name}"? This will remove the row from your Sheet.`)) return;
         
@@ -189,15 +190,20 @@ const AssetCard = memo(({ asset, exchangeRates, isLoading, onDelete, onEdit }: {
             setIsDeleting(false);
         }
     };
+
+    const handleEdit = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (onEdit) onEdit(asset);
+    };
     
     return (
     <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-6 hover:border-blue-400/50 transition-colors group animate-fade-in relative overflow-hidden flex flex-col justify-between h-full shadow-sm hover:shadow-md">
         
-        {/* Actions (Visible on Hover) */}
-        <div className="absolute top-3 right-3 flex gap-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Actions (Visible on Hover) - Increased Z-Index to stay above currency badge */}
+        <div className="absolute top-3 right-3 flex gap-1 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
             {canEdit && onEdit && (
                 <button 
-                    onClick={() => onEdit(asset)}
+                    onClick={handleEdit}
                     disabled={isDeleting || isLoading}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors disabled:opacity-50"
                     title="Edit Asset"
@@ -219,7 +225,7 @@ const AssetCard = memo(({ asset, exchangeRates, isLoading, onDelete, onEdit }: {
 
         <div>
             {isForeign && (
-                <div className="absolute top-0 right-0 px-2 py-1 bg-yellow-500/10 rounded-bl-lg border-l border-b border-yellow-500/20">
+                <div className="absolute top-0 right-0 px-2 py-1 bg-yellow-500/10 rounded-bl-lg border-l border-b border-yellow-500/20 z-10 pointer-events-none">
                     <span className="text-[10px] font-bold text-yellow-600 dark:text-yellow-500">{asset.currency}</span>
                 </div>
             )}

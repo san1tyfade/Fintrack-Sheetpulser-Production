@@ -1,5 +1,5 @@
 
-import { Asset, Investment, Trade, Subscription, BankAccount, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, DetailedExpenseData, DetailedIncomeData, ExpenseCategory, ExpenseSubCategory } from "../types";
+import { Asset, Investment, Trade, Subscription, BankAccount, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, LedgerData, LedgerCategory, LedgerItem } from "../types";
 
 // --- Utilities ---
 
@@ -370,15 +370,10 @@ const createDebtParser = (headers: string[]) => {
 };
 
 // --- Detailed Income Parser ---
-export const parseDetailedIncome = (lines: string[]): DetailedIncomeData => {
-    const categories: ExpenseCategory[] = []; // Reusing ExpenseCategory as structure is identical
+export const parseDetailedIncome = (lines: string[]): LedgerData => {
+    const categories: LedgerCategory[] = [];
     
     // As per user spec: "First two rows are empty".
-    // We expect header around index 2.
-    // However, A:ZZ fetch returns empty rows, so line 0, 1 are empty.
-    // Line 2 is potentially the header row (Month Names).
-    // Line 3+ is data.
-    
     let headerIdx = -1;
     let bestMonthCount = 0;
 
@@ -405,7 +400,7 @@ export const parseDetailedIncome = (lines: string[]): DetailedIncomeData => {
     const months: string[] = [];
     for (let j = 1; j <= 12; j++) months.push(headerRow[j] ? headerRow[j].trim() : `Month ${j}`);
 
-    const incomeSourceCategory: ExpenseCategory = {
+    const incomeSourceCategory: LedgerCategory = {
         name: 'Income Sources',
         subCategories: [],
         total: 0,
@@ -467,8 +462,8 @@ export const parseDetailedIncome = (lines: string[]): DetailedIncomeData => {
 };
 
 // --- Detailed Expense Parser ---
-export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
-    const categories: ExpenseCategory[] = [];
+export const parseDetailedExpenses = (lines: string[]): LedgerData => {
+    const categories: LedgerCategory[] = [];
     let headerIdx = -1;
     let bestMonthCount = 0;
     
@@ -507,7 +502,7 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
     const months: string[] = [];
     for (let j = 1; j <= 12; j++) months.push(headerRow[j] ? headerRow[j].trim() : `Month ${j}`);
     
-    let currentCategory: ExpenseCategory | null = null;
+    let currentCategory: LedgerCategory | null = null;
     
     for (let i = headerIdx + 1; i < lines.length; i++) {
         const row = parseCSVLine(lines[i]);
@@ -539,7 +534,7 @@ export const parseDetailedExpenses = (lines: string[]): DetailedExpenseData => {
             currentCategory = { name: name, subCategories: [], total: 0, rowIndex: i };
         } else {
             // It's a data row
-            const subItem: ExpenseSubCategory = { name, monthlyValues, total: totalRowSum, rowIndex: i };
+            const subItem: LedgerItem = { name, monthlyValues, total: totalRowSum, rowIndex: i };
             if (currentCategory) { 
                 currentCategory.subCategories.push(subItem); 
                 currentCategory.total += totalRowSum; 

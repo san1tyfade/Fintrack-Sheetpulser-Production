@@ -90,30 +90,24 @@ export interface IncomeAndExpenses {
   expenses: ExpenseEntry[];
 }
 
-// New Types for Detailed Analysis
-export interface ExpenseSubCategory {
+// Unified Ledger Types (Used for both Income and Expenses)
+export interface LedgerItem {
   name: string;
   monthlyValues: number[]; // Index 0 = Jan, 11 = Dec
   total: number;
   rowIndex?: number; // Added for editing
 }
 
-export interface ExpenseCategory {
+export interface LedgerCategory {
   name: string;
-  subCategories: ExpenseSubCategory[];
+  subCategories: LedgerItem[];
   total: number;
   rowIndex?: number; // Added for editing
 }
 
-export interface DetailedExpenseData {
+export interface LedgerData {
     months: string[]; // e.g., ["Jan", "Feb", ...]
-    categories: ExpenseCategory[];
-}
-
-// Reusing the same structure for consistency, though 'categories' might just be 'sources'
-export interface DetailedIncomeData {
-    months: string[];
-    categories: ExpenseCategory[]; 
+    categories: LedgerCategory[];
 }
 
 export interface SheetConfig {

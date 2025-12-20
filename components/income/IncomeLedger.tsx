@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { DetailedExpenseData, DetailedIncomeData } from '../../types';
+import { LedgerData } from '../../types';
 import { Loader2, AlertCircle, Check, Save } from 'lucide-react';
 
 interface IncomeLedgerProps {
-  expenseData: DetailedExpenseData;
-  incomeData: DetailedIncomeData;
+  expenseData: LedgerData;
+  incomeData: LedgerData;
   isLoading: boolean;
   onUpdateExpense: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
   onUpdateIncome: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
@@ -96,7 +96,7 @@ const EditableCell = ({ value, onSave }: { value: number, onSave: (v: number) =>
     );
 };
 
-const LedgerTable = ({ title, data, themeColor, onUpdate }: { title: string, data: DetailedExpenseData | DetailedIncomeData, themeColor: 'emerald' | 'rose', onUpdate: (c: string, s: string, m: number, v: number) => Promise<void> }) => {
+const LedgerTable = ({ title, data, themeColor, onUpdate }: { title: string, data: LedgerData, themeColor: 'emerald' | 'rose', onUpdate: (c: string, s: string, m: number, v: number) => Promise<void> }) => {
     
     const theme = {
         emerald: { header: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-900 dark:text-emerald-200', border: 'border-emerald-200 dark:border-emerald-800', badge: 'bg-emerald-500' },
