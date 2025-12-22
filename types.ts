@@ -115,7 +115,6 @@ export interface LedgerData {
 export interface SheetConfig {
   sheetId: string;
   clientId: string; // Added for OAuth
-  apiKey?: string;   // Optional now that we use Drive API
   tabNames: {
     assets: string;
     investments: string;

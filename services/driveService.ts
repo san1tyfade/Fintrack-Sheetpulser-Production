@@ -30,7 +30,21 @@ export const listSpreadsheets = async (): Promise<DriveFile[]> => {
   });
 
   if (!response.ok) {
-    throw new Error(`Drive API Error: ${response.statusText}`);
+    let errorMessage = `Status ${response.status}`;
+    try {
+        const errorBody = await response.json();
+        // Google APIs usually return { error: { code, message, errors: [] } }
+        if (errorBody.error && errorBody.error.message) {
+            errorMessage = errorBody.error.message;
+        } else {
+            errorMessage = JSON.stringify(errorBody);
+        }
+    } catch (e) {
+        // If JSON parsing fails, fall back to statusText
+        errorMessage = response.statusText || errorMessage;
+    }
+    
+    throw new Error(`Drive API Error: ${errorMessage}`);
   }
 
   const data = await response.json();
