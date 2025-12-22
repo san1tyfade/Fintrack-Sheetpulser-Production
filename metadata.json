@@ -1,5 +1,5 @@
 {
-  "name": "Fintrack Sheetpulser Portal",
-  "description": "A personal finance dashboard that parses and visualizes financial data from Google Sheets (Assets, Investments, Trades).",
+  "name": "Sheetsense",
+  "description": "Making sense of your finances",
   "requestFramePermissions": []
 }

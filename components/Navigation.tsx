@@ -29,9 +29,9 @@ export const Navigation: React.FC<NavigationProps> = ({ currentView, setView, on
       <div className="flex-1 flex flex-row md:flex-col overflow-hidden">
         <div className="p-6 hidden md:block">
             <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-emerald-500 dark:from-blue-400 dark:to-emerald-400 bg-clip-text text-transparent">
-            FinTrack Sheetpulser
+            Sheetsense
             </h1>
-            <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">Smart Portfolio Tracker</p>
+            <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">Making sense of your finances</p>
         </div>
 
         <div className="flex md:flex-col w-full justify-between md:justify-start px-2 md:px-4 md:space-y-2 py-2 md:py-0 overflow-x-auto md:overflow-visible">

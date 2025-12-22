@@ -1,2 +1,2 @@
-// This file is deprecated. Google Picker API has been replaced by the Google Drive API integration.
+// This file is deprecated. Spreadsheet selection is now handled by services/driveService.ts.
 export {};

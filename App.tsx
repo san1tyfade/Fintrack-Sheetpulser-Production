@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Navigation } from './components/Navigation';
 import { Dashboard } from './components/Dashboard';
@@ -22,13 +21,12 @@ import {
   addAccountToSheet, updateAccountInSheet,
   updateLedgerValue
 } from './services/sheetWriteService';
-import { Loader2 } from 'lucide-react';
 
 // --- Configuration & Constants ---
 
 const DEFAULT_CONFIG: SheetConfig = {
   sheetId: '',
-  clientId: '953749430238-3d0q078koppal8i2qs92ctfe5dbon994.apps.googleusercontent.com', // Set via UI in Settings
+  clientId: '953749430238-3d0q078koppal8i2qs92ctfe5dbon994.apps.googleusercontent.com',
   tabNames: {
     assets: 'Assets',
     investments: 'Investment Assets',
@@ -60,7 +58,7 @@ function App() {
   const [sheetConfig, setSheetConfig, configLoaded] = useIndexedDB<SheetConfig>('fintrack_sheet_config', DEFAULT_CONFIG);
   const [lastUpdatedStr, setLastUpdatedStr] = useIndexedDB<string | null>('fintrack_lastUpdated', null);
   const [sheetUrl, setSheetUrl] = useIndexedDB<string>('fintrack_sheetUrl', '');
-  const [isDarkMode, setIsDarkMode, themeLoaded] = useIndexedDB<boolean>('fintrack_dark_mode', true);
+  const [isDarkMode, setIsDarkMode] = useIndexedDB<boolean>('fintrack_dark_mode', true);
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncingTabs, setSyncingTabs] = useState<Set<string>>(new Set());
@@ -68,7 +66,6 @@ function App() {
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates | undefined>(undefined);
 
   const lastUpdated = useMemo(() => lastUpdatedStr ? new Date(lastUpdatedStr) : null, [lastUpdatedStr]);
-
   const calculatedInvestments = useMemo(() => reconcileInvestments(investments, trades), [investments, trades]);
 
   useEffect(() => {
@@ -83,12 +80,25 @@ function App() {
     initRates();
   }, []);
 
-  // Force hydrate logic removed since defaults are now empty. 
-  // User must enter credentials in UI.
-
+  // Optimized Non-Blocking Google Auth Initialization
   useEffect(() => {
-    if (sheetConfig.clientId && !isAuthInitialized() && window.google) initGoogleAuth(sheetConfig.clientId);
-  }, [sheetConfig.clientId]);
+    if (!configLoaded || !sheetConfig.clientId || isAuthInitialized()) return;
+
+    const tryInit = () => {
+      if (window.google) {
+        initGoogleAuth(sheetConfig.clientId);
+        return true;
+      }
+      return false;
+    };
+
+    if (!tryInit()) {
+      const interval = setInterval(() => {
+        if (tryInit()) clearInterval(interval);
+      }, 200);
+      return () => clearInterval(interval);
+    }
+  }, [sheetConfig.clientId, configLoaded]);
 
   useEffect(() => {
     if (!configLoaded) return;
@@ -132,9 +142,7 @@ function App() {
                     const finData = await fetchSafe<IncomeAndExpenses>(tabName, 'income'); 
                     setIncomeData(finData.income); 
                     setExpenseData(finData.expenses);
-                    
-                    const detIncome = await fetchSafe<LedgerData>(tabName, 'detailedIncome');
-                    setDetailedIncome(detIncome);
+                    setDetailedIncome(await fetchSafe<LedgerData>(tabName, 'detailedIncome'));
                     break;
                 case 'expenses': setDetailedExpenses(await fetchSafe(tabName, 'detailedExpenses')); break;
             }
@@ -144,8 +152,6 @@ function App() {
     catch (e: any) { setSyncStatus({ type: 'error', msg: e.message || "Sync failed" }); }
     finally { setIsSyncing(false); }
   }, [sheetConfig, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setDebtEntries, setIncomeData, setExpenseData, setDetailedExpenses, setDetailedIncome, setLastUpdatedStr]);
-
-  // --- Handlers ---
 
   const handleDeleteGeneric = useCallback(async (item: any, tabName: string, setter: (val: any | ((prev: any[]) => any[])) => void) => {
     if (!sheetConfig.sheetId || !tabName) throw new Error("Config missing.");
