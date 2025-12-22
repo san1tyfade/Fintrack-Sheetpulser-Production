@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState, memo } from 'react';
 import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, BarChart, Bar, ReferenceLine } from 'recharts';
@@ -158,8 +157,9 @@ const NetWorthChart = memo(({ data, isDarkMode }: { data: NetWorthEntry[], isDar
                                 width={50}
                             />
                             <Tooltip 
-                                contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tooltipText, borderRadius: '0.5rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                                itemStyle={{ color: '#10b981' }}
+                                contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.5rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                                itemStyle={{ color: '#10b981', fontWeight: 600 }}
+                                labelStyle={{ color: axisColor, marginBottom: '4px', fontSize: '12px' }}
                                 formatter={(value: number) => [formatBaseCurrency(value), "Net Worth"]}
                                 labelFormatter={formatTooltipDate}
                                 cursor={{ stroke: '#10b981', strokeWidth: 1 }}
@@ -193,6 +193,7 @@ const IncomeChart = memo(({ data, isDarkMode }: { data: any[], isDarkMode: boole
     const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
     const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
     const tooltipBorder = isDarkMode ? '#334155' : '#cbd5e1';
+    const tooltipText = isDarkMode ? '#f1f5f9' : '#0f172a';
 
     return (
         <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 h-[380px] flex flex-col shadow-sm transition-colors">
@@ -208,7 +209,9 @@ const IncomeChart = memo(({ data, isDarkMode }: { data: any[], isDarkMode: boole
                             <XAxis dataKey="monthStr" stroke={axisColor} tick={{fontSize: 11}} axisLine={false} tickLine={false} />
                             <YAxis stroke={axisColor} tick={{fontSize: 11}} tickFormatter={(val) => `$${val/1000}k`} axisLine={false} tickLine={false} />
                             <Tooltip 
-                                contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.5rem', color: isDarkMode ? '#fff' : '#0f172a'}}
+                                contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.5rem'}}
+                                itemStyle={{ color: tooltipText, fontWeight: 600 }}
+                                labelStyle={{ color: axisColor, marginBottom: '4px', fontSize: '12px' }}
                                 formatter={(val: number) => [formatBaseCurrency(val), 'Net Income']}
                                 cursor={{fill: gridColor, opacity: 0.3}} 
                             />
@@ -235,6 +238,7 @@ const AllocationChart = memo(({ data, selectedCategory, onSelect, isDarkMode }: 
     const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
     const tooltipBorder = isDarkMode ? '#334155' : '#cbd5e1';
     const tooltipText = isDarkMode ? '#f1f5f9' : '#0f172a';
+    const labelColor = isDarkMode ? '#94a3b8' : '#64748b';
 
     return (
         <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[380px] shadow-sm transition-colors">
@@ -278,8 +282,9 @@ const AllocationChart = memo(({ data, selectedCategory, onSelect, isDarkMode }: 
                                 ))}
                             </Pie>
                             <Tooltip 
-                                contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tooltipText, borderRadius: '0.5rem' }}
-                                itemStyle={{ color: tooltipText }}
+                                contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.5rem' }}
+                                itemStyle={{ color: tooltipText, fontWeight: 600 }}
+                                labelStyle={{ color: labelColor }}
                                 formatter={(value: number) => {
                                     const total = data.reduce((acc, c) => acc + c.value, 0);
                                     return [`${formatBaseCurrency(value)} (${((value/total)*100).toFixed(1)}%)`];

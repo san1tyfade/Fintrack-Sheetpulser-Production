@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { SheetConfig, UserProfile } from '../types';
 import { 
@@ -7,7 +6,7 @@ import {
   Trash2, ExternalLink, Key, Cloud, LogOut, Search, X
 } from 'lucide-react';
 import { validateSheetTab } from '../services/sheetService';
-import { initGoogleAuth, signIn, fetchUserProfile, signOut } from '../services/authService';
+import { initGoogleAuth, signIn, fetchUserProfile } from '../services/authService';
 import { listSpreadsheets, DriveFile } from '../services/driveService';
 
 interface DataIngestProps {
@@ -21,9 +20,12 @@ interface DataIngestProps {
   onSheetUrlChange: (url: string) => void;
   isDarkMode: boolean;
   toggleTheme: () => void;
+  userProfile: UserProfile | null;
+  onProfileChange: (profile: UserProfile | null) => void;
+  onSessionChange: (session: {token: string, expires: number} | null) => void;
+  onSignOut: () => void;
 }
 
-// --- Sheet Selector Modal ---
 const SheetSelectorModal = ({ isOpen, onClose, onSelect }: { isOpen: boolean, onClose: () => void, onSelect: (file: DriveFile) => void }) => {
     const [files, setFiles] = useState<DriveFile[]>([]);
     const [loading, setLoading] = useState(false);
@@ -128,7 +130,7 @@ const CompactTabInput: React.FC<{
   const [status, setStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
 
   useEffect(() => {
-    if (!sheetId || !value) {
+    if (!status || !sheetId || !value) {
       setStatus('idle');
       return;
     }
@@ -185,21 +187,15 @@ export const DataIngest: React.FC<DataIngestProps> = ({
     sheetUrl, 
     onSheetUrlChange, 
     isDarkMode, 
-    toggleTheme 
+    toggleTheme,
+    userProfile,
+    onProfileChange,
+    onSessionChange,
+    onSignOut
 }) => {
   
   const [isAuthLoading, setIsAuthLoading] = useState(false);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [setupMode, setSetupMode] = useState(false);
   const [isSheetSelectorOpen, setIsSheetSelectorOpen] = useState(false);
-
-  useEffect(() => {
-    if (!config.clientId) {
-      setSetupMode(true);
-    } else {
-      setSetupMode(false);
-    }
-  }, [config.clientId]);
 
   const handleSignIn = async () => {
     setIsAuthLoading(true);
@@ -207,11 +203,12 @@ export const DataIngest: React.FC<DataIngestProps> = ({
         if (!config.clientId) throw new Error("Client ID missing");
         
         initGoogleAuth(config.clientId);
-        const token = await signIn(true); 
-        const profile = await fetchUserProfile(token);
+        const session = await signIn(true); 
+        const profile = await fetchUserProfile(session.token);
         
         if (profile) {
-            setUserProfile(profile);
+            onSessionChange(session);
+            onProfileChange(profile);
         }
     } catch (e: any) {
         if (e.message !== 'POPUP_CLOSED') {
@@ -223,16 +220,11 @@ export const DataIngest: React.FC<DataIngestProps> = ({
     }
   };
 
-  const handleSignOut = () => {
-      signOut();
-      setUserProfile(null);
-  };
-
   const handleOpenSelector = async () => {
-      // Ensure we are signed in before opening
       try {
           if (!config.clientId) throw new Error("Client ID missing");
-          await signIn(false);
+          const session = await signIn(false);
+          onSessionChange(session); // Keep session sync'd
           setIsSheetSelectorOpen(true);
       } catch (e: any) {
           if (e.message !== 'POPUP_CLOSED') {
@@ -255,158 +247,103 @@ export const DataIngest: React.FC<DataIngestProps> = ({
     { title: "Logs", icon: History, items: [{k:'accounts', l:'Accounts'}, {k:'logData', l:'History'}] }
   ];
 
-  const maskKey = (key: string) => {
-      if (!key || key.length < 8) return 'Missing';
-      return key.substring(0, 4) + '...' + key.substring(key.length - 4);
-  };
-
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-fade-in pb-10">
       
-      {/* Top Section: Connection & Theme */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         
-        {/* Connection Card */}
         <div className="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-[300px]">
             <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                     <Cloud size={16} className="text-blue-500" /> Account & Data Source
                 </h3>
-                {setupMode ? (
-                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">Setup Mode</span>
-                ) : (
-                     <div className="flex gap-2">
-                        <span className="text-[10px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full" title="Client ID">ID: {maskKey(config.clientId)}</span>
-                     </div>
-                )}
             </div>
 
             <div className="p-6 flex-1 flex flex-col justify-center">
-                {/* 1. Setup Mode (Missing Credentials) */}
-                {setupMode ? (
-                    <div className="max-w-md mx-auto w-full space-y-4 animate-fade-in">
-                        <div className="text-center mb-6">
-                            <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-2xl flex items-center justify-center mx-auto mb-3 text-blue-600 dark:text-blue-400">
-                                <Key size={24} />
+                <div className="space-y-8">
+                    {!userProfile ? (
+                         <div className="text-center space-y-4">
+                            <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto text-slate-300">
+                                <Cloud size={32} />
                             </div>
-                            <h4 className="font-bold text-slate-900 dark:text-white text-lg">Configuration Required</h4>
-                            <p className="text-sm text-slate-500 dark:text-slate-400">Enter your Google Cloud OAuth Client ID.</p>
-                        </div>
-                        <div>
-                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                                OAuth Client ID
-                            </label>
-                            <input 
-                                type="text" 
-                                value={config.clientId || ''}
-                                onChange={(e) => onConfigChange({ ...config, clientId: e.target.value })}
-                                placeholder="...apps.googleusercontent.com"
-                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all mb-4"
-                            />
-                            
-                            <p className="text-[10px] text-slate-400 mb-4">
-                                Available in Google Cloud Console &gt; APIs & Services &gt; Credentials.
-                            </p>
+                            <div>
+                                <h4 className="font-bold text-slate-900 dark:text-white">Not Signed In</h4>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">Connect your Google account to access sheets.</p>
+                            </div>
                             <button 
-                                onClick={() => setSetupMode(false)}
-                                disabled={!config.clientId}
-                                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={handleSignIn}
+                                disabled={isAuthLoading}
+                                className="bg-white dark:bg-slate-700 text-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 font-bold py-2.5 px-6 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-600 transition-all flex items-center gap-2 mx-auto shadow-sm"
                             >
-                                Save & Continue
+                                {isAuthLoading ? <Loader2 size={18} className="animate-spin" /> : <img src="https://www.google.com/favicon.ico" alt="G" className="w-4 h-4" />}
+                                <span>Sign in with Google</span>
                             </button>
-                        </div>
-                    </div>
-                ) : (
-                    /* 2. Authentication & Sheet Selection */
-                    <div className="space-y-8">
-                        {/* User Profile Section */}
-                        {!userProfile ? (
-                             <div className="text-center space-y-4">
-                                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto text-slate-300">
-                                    <Cloud size={32} />
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-slate-900 dark:text-white">Not Signed In</h4>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">Connect your Google account to access sheets.</p>
-                                </div>
-                                <button 
-                                    onClick={handleSignIn}
-                                    disabled={isAuthLoading}
-                                    className="bg-white dark:bg-slate-700 text-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 font-bold py-2.5 px-6 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-600 transition-all flex items-center gap-2 mx-auto shadow-sm"
-                                >
-                                    {isAuthLoading ? <Loader2 size={18} className="animate-spin" /> : <img src="https://www.google.com/favicon.ico" alt="G" className="w-4 h-4" />}
-                                    <span>Sign in with Google</span>
-                                </button>
-                                <button onClick={() => setSetupMode(true)} className="text-xs text-slate-400 hover:text-slate-600 underline">
-                                    Update Credentials
-                                </button>
-                             </div>
-                        ) : (
-                            <div className="flex flex-col md:flex-row items-center justify-between gap-6 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-700/50 animate-fade-in">
-                                <div className="flex items-center gap-4">
-                                    <img src={userProfile.picture} alt={userProfile.name} className="w-12 h-12 rounded-full border-2 border-white dark:border-slate-700 shadow-sm" />
-                                    <div>
-                                        <h4 className="font-bold text-slate-900 dark:text-white">{userProfile.name}</h4>
-                                        <div className="flex items-center gap-2">
-                                            <p className="text-xs text-slate-500">{userProfile.email}</p>
-                                            <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                                            <span className="text-[10px] text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded">Connected</span>
-                                        </div>
+                         </div>
+                    ) : (
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-6 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-700/50 animate-fade-in">
+                            <div className="flex items-center gap-4">
+                                <img src={userProfile.picture} alt={userProfile.name} className="w-12 h-12 rounded-full border-2 border-white dark:border-slate-700 shadow-sm" />
+                                <div className="min-w-0">
+                                    <h4 className="font-bold text-slate-900 dark:text-white truncate">{userProfile.name}</h4>
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-xs text-slate-500 truncate">{userProfile.email}</p>
+                                        <span className="w-1 h-1 bg-slate-300 rounded-full shrink-0"></span>
+                                        <span className="text-[10px] text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded shrink-0">Connected</span>
                                     </div>
                                 </div>
-                                <button onClick={handleSignOut} className="text-slate-400 hover:text-red-500 transition-colors p-2" title="Sign Out">
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button onClick={onSignOut} className="text-slate-400 hover:text-red-500 transition-colors p-2" title="Sign Out">
                                     <LogOut size={18} />
                                 </button>
                             </div>
-                        )}
+                        </div>
+                    )}
 
-                        {/* Sheet Selector (Only visible if signed in) */}
-                        {userProfile && (
-                            <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-700/50">
-                                <div className="flex justify-between items-end">
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Active Spreadsheet</label>
-                                    {config.sheetId && (
-                                        <a href={sheetUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] text-blue-500 hover:underline">
-                                            Open in Sheets <ExternalLink size={10} />
-                                        </a>
-                                    )}
-                                </div>
-                                
-                                <div className="flex items-center gap-3">
-                                    <div className="flex-1 relative group">
-                                         <input 
-                                            type="text" 
-                                            value={config.sheetId ? `Sheet ID: ${config.sheetId}` : ''} 
-                                            readOnly 
-                                            placeholder="No sheet selected"
-                                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-3 text-sm text-slate-600 dark:text-slate-300 focus:ring-2 focus:ring-blue-500 outline-none cursor-default"
-                                        />
-                                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500">
-                                            <FileSpreadsheet size={18} />
-                                        </div>
-                                    </div>
-                                    <button 
-                                        onClick={handleOpenSelector}
-                                        className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center gap-2 whitespace-nowrap"
-                                    >
-                                        <Search size={18} />
-                                        {config.sheetId ? 'Change Sheet' : 'Select Sheet'}
-                                    </button>
-                                </div>
+                    {userProfile && (
+                        <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-700/50">
+                            <div className="flex justify-between items-end">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Active Spreadsheet</label>
                                 {config.sheetId && (
-                                     <p className="text-xs text-slate-400 flex items-center gap-1">
-                                        <CheckCircle2 size={12} className="text-emerald-500" /> 
-                                        Ready to sync. Map your tabs below.
-                                     </p>
+                                    <a href={sheetUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] text-blue-500 hover:underline">
+                                        Open in Sheets <ExternalLink size={10} />
+                                    </a>
                                 )}
                             </div>
-                        )}
-                    </div>
-                )}
+                            
+                            <div className="flex items-center gap-3">
+                                <div className="flex-1 relative group">
+                                     <input 
+                                        type="text" 
+                                        value={config.sheetId ? `Sheet ID: ${config.sheetId}` : ''} 
+                                        readOnly 
+                                        placeholder="No sheet selected"
+                                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-3 text-sm text-slate-600 dark:text-slate-300 focus:ring-2 focus:ring-blue-500 outline-none cursor-default"
+                                    />
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500">
+                                        <FileSpreadsheet size={18} />
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={handleOpenSelector}
+                                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center gap-2 whitespace-nowrap"
+                                >
+                                    <Search size={18} />
+                                    {config.sheetId ? 'Change Sheet' : 'Select Sheet'}
+                                </button>
+                            </div>
+                            {config.sheetId && (
+                                 <p className="text-xs text-slate-400 flex items-center gap-1">
+                                    <CheckCircle2 size={12} className="text-emerald-500" /> 
+                                    Ready to sync. Map your tabs below.
+                                 </p>
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
 
-        {/* Theme & Meta Card */}
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-2xl shadow-sm flex flex-col gap-6 h-full">
              <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
@@ -442,7 +379,6 @@ export const DataIngest: React.FC<DataIngestProps> = ({
         </div>
       </div>
 
-      {/* Tab Mapping Configuration */}
       <div className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm transition-opacity duration-300 ${!config.sheetId ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
           <div className="flex items-center gap-3">
@@ -493,7 +429,7 @@ export const DataIngest: React.FC<DataIngestProps> = ({
 
         {syncStatus && (
           <div className={`mt-6 p-3 rounded-xl border text-[11px] font-bold animate-fade-in flex items-center gap-2
-            ${syncStatus.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20 text-red-600 dark:text-red-400'}`}>
+            ${syncStatus.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-200 text-red-600 dark:text-red-400'}`}>
             {syncStatus.type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
             {syncStatus.msg}
           </div>

@@ -7,13 +7,13 @@ import { TradesList } from './components/TradesList';
 import { IncomeView } from './components/IncomeView';
 import { InformationView } from './components/InformationView';
 import { DataIngest } from './components/DataIngest';
-import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData } from './types';
+import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile } from './types';
 import { fetchSheetData, extractSheetId } from './services/sheetService';
 import { parseRawData } from './services/geminiService';
 import { fetchLiveRates } from './services/currencyService';
 import { reconcileInvestments } from './services/portfolioService';
 import { useIndexedDB } from './hooks/useIndexedDB';
-import { initGoogleAuth, isAuthInitialized } from './services/authService';
+import { initGoogleAuth, isAuthInitialized, restoreSession, signOut } from './services/authService';
 import { 
   addTradeToSheet, deleteRowFromSheet, updateTradeInSheet, 
   addAssetToSheet, updateAssetInSheet,
@@ -24,9 +24,11 @@ import {
 
 // --- Configuration & Constants ---
 
+const OAUTH_CLIENT_ID = '953749430238-3d0q078koppal8i2qs92ctfe5dbon994.apps.googleusercontent.com';
+
 const DEFAULT_CONFIG: SheetConfig = {
   sheetId: '',
-  clientId: '953749430238-3d0q078koppal8i2qs92ctfe5dbon994.apps.googleusercontent.com',
+  clientId: OAUTH_CLIENT_ID,
   tabNames: {
     assets: 'Assets',
     investments: 'Investment Assets',
@@ -59,6 +61,10 @@ function App() {
   const [lastUpdatedStr, setLastUpdatedStr] = useIndexedDB<string | null>('fintrack_lastUpdated', null);
   const [sheetUrl, setSheetUrl] = useIndexedDB<string>('fintrack_sheetUrl', '');
   const [isDarkMode, setIsDarkMode] = useIndexedDB<boolean>('fintrack_dark_mode', true);
+  
+  // Persisted Auth State
+  const [userProfile, setUserProfile, profileLoaded] = useIndexedDB<UserProfile | null>('fintrack_user_profile', null);
+  const [authSession, setAuthSession, sessionLoaded] = useIndexedDB<{token: string, expires: number} | null>('fintrack_auth_session', null);
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncingTabs, setSyncingTabs] = useState<Set<string>>(new Set());
@@ -80,13 +86,18 @@ function App() {
     initRates();
   }, []);
 
-  // Optimized Non-Blocking Google Auth Initialization
+  // Optimized Non-Blocking Google Auth Initialization & Session Recovery
   useEffect(() => {
-    if (!configLoaded || !sheetConfig.clientId || isAuthInitialized()) return;
+    if (!configLoaded || !sessionLoaded) return;
+
+    if (authSession) {
+        restoreSession(authSession.token, authSession.expires);
+    }
 
     const tryInit = () => {
       if (window.google) {
-        initGoogleAuth(sheetConfig.clientId);
+        // Force the hardcoded Client ID
+        initGoogleAuth(OAUTH_CLIENT_ID);
         return true;
       }
       return false;
@@ -98,7 +109,7 @@ function App() {
       }, 200);
       return () => clearInterval(interval);
     }
-  }, [sheetConfig.clientId, configLoaded]);
+  }, [configLoaded, sessionLoaded]);
 
   useEffect(() => {
     if (!configLoaded) return;
@@ -167,6 +178,12 @@ function App() {
     setter(prev => prev.map(i => i.id === item.id ? item : i));
   }, [sheetConfig]);
 
+  const handleSignOut = () => {
+      signOut();
+      setAuthSession(null);
+      setUserProfile(null);
+  };
+
   return (
     <div className="flex flex-col md:flex-row min-h-screen font-sans">
       <Navigation currentView={currentView} setView={setCurrentView} onSync={() => syncData()} isSyncing={isSyncing} lastUpdated={lastUpdated} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
@@ -207,7 +224,24 @@ function App() {
               onDeleteAccount={a => handleDeleteGeneric(a, sheetConfig.tabNames.accounts, setAccounts)}
             />
           )}
-          {currentView === ViewState.SETTINGS && <DataIngest config={sheetConfig} onConfigChange={setSheetConfig} onSync={syncData} isSyncing={isSyncing} syncingTabs={syncingTabs} syncStatus={syncStatus} sheetUrl={sheetUrl} onSheetUrlChange={setSheetUrl} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />}
+          {currentView === ViewState.SETTINGS && (
+            <DataIngest 
+              config={sheetConfig} 
+              onConfigChange={setSheetConfig} 
+              onSync={syncData} 
+              isSyncing={isSyncing} 
+              syncingTabs={syncingTabs} 
+              syncStatus={syncStatus} 
+              sheetUrl={sheetUrl} 
+              onSheetUrlChange={setSheetUrl} 
+              isDarkMode={isDarkMode} 
+              toggleTheme={toggleTheme} 
+              userProfile={userProfile}
+              onProfileChange={setUserProfile}
+              onSessionChange={setAuthSession}
+              onSignOut={handleSignOut}
+            />
+          )}
         </div>
       </main>
     </div>
