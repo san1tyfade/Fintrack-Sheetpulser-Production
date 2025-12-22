@@ -1,9 +1,6 @@
-
-
-
 export interface Asset {
   id: string;
-  rowIndex?: number; // Added for deletion logic
+  rowIndex?: number;
   name: string;
   type: string;
   value: number;
@@ -25,7 +22,7 @@ export interface Investment {
 
 export interface Trade {
   id: string;
-  rowIndex?: number; // Added for deletion logic
+  rowIndex?: number;
   date: string;
   ticker: string;
   type: 'BUY' | 'SELL';
@@ -92,29 +89,28 @@ export interface IncomeAndExpenses {
   expenses: ExpenseEntry[];
 }
 
-// Unified Ledger Types (Used for both Income and Expenses)
 export interface LedgerItem {
   name: string;
-  monthlyValues: number[]; // Index 0 = Jan, 11 = Dec
+  monthlyValues: number[];
   total: number;
-  rowIndex?: number; // Added for editing
+  rowIndex?: number;
 }
 
 export interface LedgerCategory {
   name: string;
   subCategories: LedgerItem[];
   total: number;
-  rowIndex?: number; // Added for editing
+  rowIndex?: number;
 }
 
 export interface LedgerData {
-    months: string[]; // e.g., ["Jan", "Feb", ...]
+    months: string[];
     categories: LedgerCategory[];
 }
 
 export interface SheetConfig {
   sheetId: string;
-  clientId: string; // Added for OAuth
+  clientId: string;
   tabNames: {
     assets: string;
     investments: string;
@@ -124,7 +120,7 @@ export interface SheetConfig {
     logData: string;
     debt: string;
     income: string;
-    expenses: string; // Separate tab for detailed category breakdown
+    expenses: string;
   };
 }
 
@@ -141,7 +137,8 @@ export enum ViewState {
   TRADES = 'TRADES',
   INCOME = 'INCOME',
   INFORMATION = 'INFORMATION',
-  SETTINGS = 'SETTINGS'
+  SETTINGS = 'SETTINGS',
+  PRIVACY = 'PRIVACY'
 }
 
 export type ExchangeRates = Record<string, number>;

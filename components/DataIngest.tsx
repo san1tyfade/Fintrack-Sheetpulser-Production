@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { SheetConfig, UserProfile } from '../types';
+import { SheetConfig, UserProfile, ViewState } from '../types';
 import { 
   Loader2, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, 
   Layers, DollarSign, History, Sun, Moon, ShieldCheck, 
-  Trash2, ExternalLink, Key, Cloud, LogOut, Search, X
+  Trash2, ExternalLink, Cloud, LogOut, Search, X, ArrowRight
 } from 'lucide-react';
 import { validateSheetTab } from '../services/sheetService';
 import { initGoogleAuth, signIn, fetchUserProfile } from '../services/authService';
-import { listSpreadsheets, DriveFile } from '../services/driveService';
+import { openPicker } from '../services/pickerService';
 
 interface DataIngestProps {
   config: SheetConfig;
@@ -24,100 +24,8 @@ interface DataIngestProps {
   onProfileChange: (profile: UserProfile | null) => void;
   onSessionChange: (session: {token: string, expires: number} | null) => void;
   onSignOut: () => void;
+  onViewChange: (view: ViewState) => void;
 }
-
-const SheetSelectorModal = ({ isOpen, onClose, onSelect }: { isOpen: boolean, onClose: () => void, onSelect: (file: DriveFile) => void }) => {
-    const [files, setFiles] = useState<DriveFile[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [search, setSearch] = useState('');
-
-    useEffect(() => {
-        if (isOpen) {
-            loadFiles();
-        }
-    }, [isOpen]);
-
-    const loadFiles = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const list = await listSpreadsheets();
-            setFiles(list);
-        } catch (e: any) {
-            setError(e.message || "Failed to load files");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    if (!isOpen) return null;
-
-    const filtered = files.filter(f => f.name.toLowerCase().includes(search.toLowerCase()));
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white dark:bg-slate-800 w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[80vh]">
-                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
-                    <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
-                        <FileSpreadsheet className="text-emerald-500" size={20} /> Select Spreadsheet
-                    </h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-white">
-                        <X size={20} />
-                    </button>
-                </div>
-
-                <div className="p-4 border-b border-slate-100 dark:border-slate-700">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                        <input 
-                            type="text" 
-                            placeholder="Search files..."
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                    {loading ? (
-                        <div className="flex flex-col items-center justify-center py-10 text-slate-400">
-                            <Loader2 className="animate-spin mb-2" size={24} />
-                            <span className="text-xs">Loading spreadsheets...</span>
-                        </div>
-                    ) : error ? (
-                        <div className="p-4 text-center text-red-500 text-sm">
-                            <p className="mb-2 font-bold">Error loading files</p>
-                            <p>{error}</p>
-                            <button onClick={loadFiles} className="mt-4 text-blue-500 underline text-xs">Try Again</button>
-                        </div>
-                    ) : filtered.length === 0 ? (
-                        <div className="p-10 text-center text-slate-500 text-sm">No spreadsheets found.</div>
-                    ) : (
-                        filtered.map(file => (
-                            <button
-                                key={file.id}
-                                onClick={() => onSelect(file)}
-                                className="w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors flex items-center gap-3 group"
-                            >
-                                <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg group-hover:bg-emerald-200 dark:group-hover:bg-emerald-800/50 transition-colors">
-                                    <FileSpreadsheet size={18} />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <h4 className="font-bold text-slate-900 dark:text-white truncate text-sm">{file.name}</h4>
-                                    <p className="text-[10px] text-slate-500">
-                                        Last modified: {new Date(file.modifiedTime).toLocaleDateString()}
-                                    </p>
-                                </div>
-                            </button>
-                        ))
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
 
 const CompactTabInput: React.FC<{
   label: string;
@@ -191,11 +99,11 @@ export const DataIngest: React.FC<DataIngestProps> = ({
     userProfile,
     onProfileChange,
     onSessionChange,
-    onSignOut
+    onSignOut,
+    onViewChange
 }) => {
   
   const [isAuthLoading, setIsAuthLoading] = useState(false);
-  const [isSheetSelectorOpen, setIsSheetSelectorOpen] = useState(false);
 
   const handleSignIn = async () => {
     setIsAuthLoading(true);
@@ -220,15 +128,20 @@ export const DataIngest: React.FC<DataIngestProps> = ({
     }
   };
 
-  const handleOpenSelector = async () => {
+  const handleOpenPicker = async () => {
       try {
           if (!config.clientId) throw new Error("Client ID missing");
           const session = await signIn(false);
-          onSessionChange(session); // Keep session sync'd
-          setIsSheetSelectorOpen(true);
+          onSessionChange(session);
+          
+          const result = await openPicker();
+          if (result) {
+              onConfigChange({ ...config, sheetId: result.id });
+              onSheetUrlChange(result.url);
+          }
       } catch (e: any) {
           if (e.message !== 'POPUP_CLOSED') {
-             alert("Please sign in to select a sheet.");
+             alert(`Could not open picker: ${e.message}`);
           }
       }
   };
@@ -325,7 +238,7 @@ export const DataIngest: React.FC<DataIngestProps> = ({
                                     </div>
                                 </div>
                                 <button 
-                                    onClick={handleOpenSelector}
+                                    onClick={handleOpenPicker}
                                     className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center gap-2 whitespace-nowrap"
                                 >
                                     <Search size={18} />
@@ -364,17 +277,25 @@ export const DataIngest: React.FC<DataIngestProps> = ({
             
             <div className="mt-auto pt-6 border-t border-slate-100 dark:border-slate-700">
                  <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-                    <ShieldCheck size={16} className="text-emerald-500" /> Privacy
+                    <ShieldCheck size={16} className="text-emerald-500" /> Privacy & Security
                 </h3>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed mb-4">
-                    Data is processed locally in your browser. Credentials and configuration are stored securely in IndexedDB.
-                </p>
-                 <button 
-                    onClick={handleWipeData}
-                    className="w-full flex items-center justify-center gap-2 text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 px-4 py-2.5 rounded-xl hover:bg-red-100 dark:hover:bg-red-500/20 transition-all"
-                >
-                    <Trash2 size={12} /> Wipe Local Data
-                </button>
+                <div className="space-y-3">
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Data is processed locally in your browser. We use the restrictive 'drive.file' scope to access only files you select.
+                    </p>
+                    <button 
+                        onClick={() => onViewChange(ViewState.PRIVACY)}
+                        className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-all"
+                    >
+                        View Full Privacy Policy <ArrowRight size={12} />
+                    </button>
+                    <button 
+                        onClick={handleWipeData}
+                        className="w-full flex items-center justify-center gap-2 text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 px-4 py-2.5 rounded-xl hover:bg-red-100 dark:hover:bg-red-500/20 transition-all"
+                    >
+                        <Trash2 size={12} /> Wipe Local Data
+                    </button>
+                </div>
             </div>
         </div>
       </div>
@@ -435,16 +356,6 @@ export const DataIngest: React.FC<DataIngestProps> = ({
           </div>
         )}
       </div>
-
-      <SheetSelectorModal 
-        isOpen={isSheetSelectorOpen} 
-        onClose={() => setIsSheetSelectorOpen(false)}
-        onSelect={(file) => {
-            onConfigChange({ ...config, sheetId: file.id });
-            onSheetUrlChange(file.webViewLink);
-            setIsSheetSelectorOpen(false);
-        }}
-      />
     </div>
   );
 };

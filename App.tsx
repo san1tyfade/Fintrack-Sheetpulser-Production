@@ -7,6 +7,7 @@ import { TradesList } from './components/TradesList';
 import { IncomeView } from './components/IncomeView';
 import { InformationView } from './components/InformationView';
 import { DataIngest } from './components/DataIngest';
+import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile } from './types';
 import { fetchSheetData, extractSheetId } from './services/sheetService';
 import { parseRawData } from './services/geminiService';
@@ -240,7 +241,11 @@ function App() {
               onProfileChange={setUserProfile}
               onSessionChange={setAuthSession}
               onSignOut={handleSignOut}
+              onViewChange={setCurrentView}
             />
+          )}
+          {currentView === ViewState.PRIVACY && (
+            <PrivacyPolicy onBack={() => setCurrentView(ViewState.SETTINGS)} />
           )}
         </div>
       </main>
