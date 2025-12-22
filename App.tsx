@@ -28,7 +28,7 @@ import { Loader2 } from 'lucide-react';
 
 const DEFAULT_CONFIG: SheetConfig = {
   sheetId: '',
-  clientId: '',
+  clientId: '953749430238-3d0q078koppal8i2qs92ctfe5dbon994.apps.googleusercontent.com', // Set via UI in Settings
   tabNames: {
     assets: 'Assets',
     investments: 'Investment Assets',
@@ -83,6 +83,9 @@ function App() {
     initRates();
   }, []);
 
+  // Force hydrate logic removed since defaults are now empty. 
+  // User must enter credentials in UI.
+
   useEffect(() => {
     if (sheetConfig.clientId && !isAuthInitialized() && window.google) initGoogleAuth(sheetConfig.clientId);
   }, [sheetConfig.clientId]);
@@ -126,9 +129,6 @@ function App() {
                 case 'logData': setNetWorthHistory(await fetchSafe(tabName, 'logData')); break;
                 case 'debt': setDebtEntries(await fetchSafe(tabName, 'debt')); break;
                 case 'income': 
-                    // Parse both summary data (for dashboard) and detailed grid (for ledger) from the same tab if possible
-                    // Current behavior: `fetchSafe` parses based on type. 
-                    // We need to parse detailedIncome specifically.
                     const finData = await fetchSafe<IncomeAndExpenses>(tabName, 'income'); 
                     setIncomeData(finData.income); 
                     setExpenseData(finData.expenses);

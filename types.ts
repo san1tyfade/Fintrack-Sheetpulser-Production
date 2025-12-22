@@ -1,4 +1,6 @@
 
+
+
 export interface Asset {
   id: string;
   rowIndex?: number; // Added for deletion logic
@@ -113,6 +115,7 @@ export interface LedgerData {
 export interface SheetConfig {
   sheetId: string;
   clientId: string; // Added for OAuth
+  apiKey?: string;   // Optional now that we use Drive API
   tabNames: {
     assets: string;
     investments: string;
@@ -124,6 +127,12 @@ export interface SheetConfig {
     income: string;
     expenses: string; // Separate tab for detailed category breakdown
   };
+}
+
+export interface UserProfile {
+  name: string;
+  email: string;
+  picture: string;
 }
 
 export enum ViewState {
