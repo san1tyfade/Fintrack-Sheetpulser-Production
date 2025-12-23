@@ -1,7 +1,7 @@
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { LedgerData } from '../../types';
-import { Loader2, AlertCircle, Check, Save } from 'lucide-react';
+// Added RefreshCw to imports
+import { Loader2, AlertCircle, Check, Save, ChevronLeft, ChevronRight, Calendar, RefreshCw } from 'lucide-react';
 
 interface IncomeLedgerProps {
   expenseData: LedgerData;
@@ -11,7 +11,7 @@ interface IncomeLedgerProps {
   onUpdateIncome: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
 }
 
-const EditableCell = ({ value, onSave }: { value: number, onSave: (v: number) => Promise<void> }) => {
+const EditableCell = ({ value, onSave, isCompact = false }: { value: number, onSave: (v: number) => Promise<void>, isCompact?: boolean }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [tempValue, setTempValue] = useState(value.toString());
     const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
@@ -40,7 +40,7 @@ const EditableCell = ({ value, onSave }: { value: number, onSave: (v: number) =>
     const save = async () => {
         const num = parseFloat(tempValue);
         if (isNaN(num)) {
-            setTempValue(value.toString()); // Revert if invalid
+            setTempValue(value.toString());
             setIsEditing(false);
             return;
         }
@@ -51,14 +51,14 @@ const EditableCell = ({ value, onSave }: { value: number, onSave: (v: number) =>
         }
 
         setStatus('saving');
-        setIsEditing(false); // Optimistically close input
+        setIsEditing(false);
         try {
             await onSave(num);
             setStatus('success');
             setTimeout(() => setStatus('idle'), 2000);
         } catch (e) {
             setStatus('error');
-            setTempValue(value.toString()); // Revert on error
+            setTempValue(value.toString());
             setTimeout(() => setStatus('idle'), 3000);
         }
     };
@@ -68,12 +68,12 @@ const EditableCell = ({ value, onSave }: { value: number, onSave: (v: number) =>
             <input
                 ref={inputRef}
                 type="text" 
+                inputMode="decimal"
                 value={tempValue}
                 onChange={(e) => setTempValue(e.target.value)}
                 onBlur={save}
                 onKeyDown={handleKeyDown}
-                onFocus={(e) => e.target.select()}
-                className="w-full h-full text-right px-2 py-1 bg-blue-50 dark:bg-blue-900/30 outline-none border border-blue-500 rounded-sm font-mono text-sm"
+                className={`w-full h-full text-right px-2 py-1 bg-blue-50 dark:bg-blue-900/40 outline-none border-2 border-blue-500 rounded-lg font-mono text-sm shadow-inner`}
             />
         );
     }
@@ -81,91 +81,126 @@ const EditableCell = ({ value, onSave }: { value: number, onSave: (v: number) =>
     return (
         <div 
             onClick={() => setIsEditing(true)}
-            className={`w-full h-full px-2 py-3 text-right cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors relative group font-mono text-sm ${
+            className={`w-full h-full px-3 py-4 text-right cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors relative group font-mono text-sm ${
                 value === 0 ? 'text-slate-300 dark:text-slate-600' : 'text-slate-900 dark:text-slate-200'
             }`}
         >
             {value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
             
-            {status === 'saving' && <Loader2 size={12} className="absolute top-1 right-1 animate-spin text-blue-500" />}
-            {status === 'success' && <Check size={12} className="absolute top-1 right-1 text-emerald-500" />}
-            {status === 'error' && <AlertCircle size={12} className="absolute top-1 right-1 text-red-500" />}
+            {status === 'saving' && <Loader2 size={10} className="absolute top-1 right-1 animate-spin text-blue-500" />}
+            {status === 'success' && <Check size={10} className="absolute top-1 right-1 text-emerald-500" />}
+            {status === 'error' && <AlertCircle size={10} className="absolute top-1 right-1 text-red-500" />}
             
             <div className="absolute inset-0 border border-transparent group-hover:border-slate-200 dark:group-hover:border-slate-700 pointer-events-none" />
         </div>
     );
 };
 
-const LedgerTable = ({ title, data, themeColor, onUpdate }: { title: string, data: LedgerData, themeColor: 'emerald' | 'rose', onUpdate: (c: string, s: string, m: number, v: number) => Promise<void> }) => {
+const LedgerTable = ({ 
+    title, 
+    data, 
+    themeColor, 
+    onUpdate, 
+    visibleMonthIndex 
+}: { 
+    title: string, 
+    data: LedgerData, 
+    themeColor: 'emerald' | 'rose', 
+    onUpdate: (c: string, s: string, m: number, v: number) => Promise<void>,
+    visibleMonthIndex: number | null // null means show all (desktop)
+}) => {
     
     const theme = {
-        emerald: { header: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-900 dark:text-emerald-200', border: 'border-emerald-200 dark:border-emerald-800', badge: 'bg-emerald-500' },
-        rose: { header: 'bg-rose-100 dark:bg-rose-900/30 text-rose-900 dark:text-rose-200', border: 'border-rose-200 dark:border-rose-800', badge: 'bg-rose-500' }
+        emerald: { 
+            header: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20', 
+            border: 'border-slate-200 dark:border-slate-800', 
+            badge: 'bg-emerald-500' 
+        },
+        rose: { 
+            header: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20', 
+            border: 'border-slate-200 dark:border-slate-800', 
+            badge: 'bg-rose-500' 
+        }
     }[themeColor];
 
     if (!data || data.categories.length === 0) return null;
 
+    const isMonthView = visibleMonthIndex !== null;
+
     return (
-        <div className="mb-8 last:mb-0">
-            <div className={`px-4 py-2 text-sm font-bold uppercase tracking-wider flex items-center gap-2 ${theme.header} rounded-t-xl`}>
-                <div className={`w-2 h-2 rounded-full ${theme.badge}`} />
+        <div className="mb-10 last:mb-0">
+            <div className={`px-4 py-3 text-xs font-bold uppercase tracking-widest flex items-center gap-2 ${theme.header} rounded-t-2xl border-x border-t`}>
+                <div className={`w-1.5 h-4 rounded-full ${theme.badge}`} />
                 {title}
             </div>
-            <div className={`overflow-x-auto border-x border-b ${theme.border} rounded-b-xl`}>
+            <div className={`overflow-x-auto border-x border-b ${theme.border} rounded-b-2xl shadow-sm bg-white dark:bg-slate-900/50`}>
                 <table className="w-full border-collapse">
                     <thead>
-                        <tr>
-                            <th className="p-3 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-r border-slate-200 dark:border-slate-700 min-w-[200px] sticky left-0 bg-white dark:bg-slate-900 z-20">
+                        <tr className="bg-slate-50/50 dark:bg-slate-850/80">
+                            <th className="p-4 text-left text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-r border-slate-200 dark:border-slate-700 min-w-[160px] sticky left-0 bg-slate-50 dark:bg-slate-850 z-20">
                                 Source / Category
                             </th>
-                            {data.months.map((m, idx) => (
-                                <th key={idx} className="p-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 min-w-[100px]">
-                                    {m}
+                            {data.months.map((m, idx) => {
+                                if (isMonthView && idx !== visibleMonthIndex) return null;
+                                return (
+                                    <th key={idx} className="p-4 text-right text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-700 min-w-[100px]">
+                                        {m}
+                                    </th>
+                                );
+                            })}
+                            {!isMonthView && (
+                                <th className="p-4 text-right text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-700 min-w-[100px] bg-slate-100/50 dark:bg-slate-800">
+                                    Total
                                 </th>
-                            ))}
-                            <th className="p-3 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 min-w-[100px] bg-slate-50 dark:bg-slate-800">
-                                Total
-                            </th>
+                            )}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                         {data.categories.map((cat) => (
                             <React.Fragment key={cat.name}>
-                                {/* Category Header Row */}
-                                <tr className="bg-slate-50/80 dark:bg-slate-800/40 font-bold">
-                                    <td className="p-3 text-sm text-slate-800 dark:text-slate-200 border-r border-slate-200 dark:border-slate-700 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10">
+                                {/* Category Summary Row */}
+                                <tr className="bg-slate-50/80 dark:bg-slate-800/60 font-bold group">
+                                    <td className="p-4 text-sm text-slate-900 dark:text-slate-100 border-r border-slate-200 dark:border-slate-700 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10">
                                         {cat.name}
                                     </td>
                                     {data.months.map((_, mIdx) => {
+                                        if (isMonthView && mIdx !== visibleMonthIndex) return null;
                                         const total = cat.subCategories.reduce((acc, sub) => acc + (sub.monthlyValues[mIdx] || 0), 0);
                                         return (
-                                            <td key={mIdx} className="p-3 text-right text-sm text-slate-500 dark:text-slate-400 font-mono">
+                                            <td key={mIdx} className="p-4 text-right text-sm text-slate-900 dark:text-slate-100 font-mono">
                                                 {total > 0 ? total.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '-'}
                                             </td>
                                         );
                                     })}
-                                    <td className="p-3 text-right text-sm text-slate-800 dark:text-slate-200 font-mono bg-slate-100 dark:bg-slate-800/60 font-bold">
-                                        {cat.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                    </td>
+                                    {!isMonthView && (
+                                        <td className="p-4 text-right text-sm text-slate-900 dark:text-white font-mono bg-slate-100 dark:bg-slate-800/80 font-bold">
+                                            {cat.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                        </td>
+                                    )}
                                 </tr>
 
-                                {/* Subcategory Rows */}
+                                {/* Detailed Subcategory Rows */}
                                 {cat.subCategories.map((sub) => (
-                                    <tr key={`${cat.name}-${sub.name}`} className="bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                                        <td className="pl-6 pr-3 py-0 text-sm text-slate-600 dark:text-slate-300 border-r border-slate-200 dark:border-slate-700 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/30 z-10 truncate max-w-[200px]" title={sub.name}>
+                                    <tr key={`${cat.name}-${sub.name}`} className="bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
+                                        <td className="pl-8 pr-4 py-3 text-xs text-slate-500 dark:text-slate-400 border-r border-slate-200 dark:border-slate-700 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/30 z-10 truncate max-w-[200px]" title={sub.name}>
                                             {sub.name}
                                         </td>
-                                        {data.months.map((_, mIdx) => (
-                                            <td key={mIdx} className="p-0 border-r border-slate-100 dark:border-slate-800 last:border-0">
-                                                <EditableCell 
-                                                    value={sub.monthlyValues[mIdx] || 0} 
-                                                    onSave={(val) => onUpdate(cat.name, sub.name, mIdx, val)}
-                                                />
+                                        {data.months.map((_, mIdx) => {
+                                            if (isMonthView && mIdx !== visibleMonthIndex) return null;
+                                            return (
+                                                <td key={mIdx} className="p-0 border-r border-slate-100 dark:border-slate-800 last:border-0 h-full">
+                                                    <EditableCell 
+                                                        value={sub.monthlyValues[mIdx] || 0} 
+                                                        onSave={(val) => onUpdate(cat.name, sub.name, mIdx, val)}
+                                                    />
+                                                </td>
+                                            );
+                                        })}
+                                        {!isMonthView && (
+                                            <td className="p-4 text-right text-xs font-bold text-slate-400 dark:text-slate-500 font-mono bg-slate-50/30 dark:bg-slate-900/30">
+                                                {sub.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                             </td>
-                                        ))}
-                                        <td className="p-3 text-right text-sm font-bold text-slate-700 dark:text-slate-300 font-mono bg-slate-50/50 dark:bg-slate-900">
-                                            {sub.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                        </td>
+                                        )}
                                     </tr>
                                 ))}
                             </React.Fragment>
@@ -179,30 +214,101 @@ const LedgerTable = ({ title, data, themeColor, onUpdate }: { title: string, dat
 
 export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ expenseData, incomeData, isLoading, onUpdateExpense, onUpdateIncome }) => {
     
-    const hasExpense = expenseData && expenseData.categories.length > 0;
-    const hasIncome = incomeData && incomeData.categories.length > 0;
+    const [focusedMonthIndex, setFocusedMonthIndex] = useState<number>(0);
+    const [isMobile, setIsMobile] = useState(false);
 
-    if (!hasExpense && !hasIncome) {
+    useEffect(() => {
+        const checkMobile = () => {
+            const mobile = window.innerWidth < 768;
+            setIsMobile(mobile);
+        };
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
+    // Pick a sensible default month (e.g., current month)
+    const months = incomeData.months.length > 0 ? incomeData.months : expenseData.months;
+    
+    useEffect(() => {
+        if (months.length > 0) {
+            // Default to the last month with data (usually current)
+            setFocusedMonthIndex(months.length - 1);
+        }
+    }, [months.length]);
+
+    const hasData = (incomeData?.categories.length > 0) || (expenseData?.categories.length > 0);
+
+    if (!hasData) {
         return (
-            <div className="flex flex-col items-center justify-center p-12 text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/10">
-                <p>No ledger data loaded. Check your sheet connection.</p>
+            <div className="flex flex-col items-center justify-center p-16 text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl bg-slate-50 dark:bg-slate-800/10">
+                <Calendar size={48} className="opacity-20 mb-4" />
+                <p className="font-medium">No ledger data found.</p>
+                <p className="text-sm mt-1">Connect your sheet to view the monthly breakdown.</p>
             </div>
         );
     }
 
+    const nextMonth = () => setFocusedMonthIndex(prev => Math.min(prev + 1, months.length - 1));
+    const prevMonth = () => setFocusedMonthIndex(prev => Math.max(prev - 1, 0));
+
     return (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm animate-fade-in flex flex-col h-[calc(100vh-200px)]">
-            <div className="flex-1 overflow-auto p-4">
-                <LedgerTable title="Income Ledger" data={incomeData} themeColor="emerald" onUpdate={onUpdateIncome} />
-                <LedgerTable title="Expense Ledger" data={expenseData} themeColor="rose" onUpdate={onUpdateExpense} />
+        <div className="flex flex-col h-[calc(100vh-180px)] md:h-[calc(100vh-220px)]">
+            
+            {/* Mobile Month Navigation */}
+            {isMobile && months.length > 0 && (
+                <div className="flex items-center justify-between mb-6 px-1">
+                    <button 
+                        onClick={prevMonth} 
+                        disabled={focusedMonthIndex === 0}
+                        className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm disabled:opacity-30 disabled:shadow-none"
+                    >
+                        <ChevronLeft size={20} />
+                    </button>
+                    <div className="text-center">
+                        <h4 className="text-base font-bold text-slate-900 dark:text-white uppercase tracking-widest">
+                            {months[focusedMonthIndex]}
+                        </h4>
+                        <p className="text-[10px] text-slate-400 font-bold">Month {focusedMonthIndex + 1} of {months.length}</p>
+                    </div>
+                    <button 
+                        onClick={nextMonth} 
+                        disabled={focusedMonthIndex === months.length - 1}
+                        className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm disabled:opacity-30 disabled:shadow-none"
+                    >
+                        <ChevronRight size={20} />
+                    </button>
+                </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto space-y-2 pb-10 custom-scrollbar">
+                <LedgerTable 
+                    title="Income Ledger" 
+                    data={incomeData} 
+                    themeColor="emerald" 
+                    onUpdate={onUpdateIncome} 
+                    visibleMonthIndex={isMobile ? focusedMonthIndex : null}
+                />
+                <LedgerTable 
+                    title="Expense Ledger" 
+                    data={expenseData} 
+                    themeColor="rose" 
+                    onUpdate={onUpdateExpense} 
+                    visibleMonthIndex={isMobile ? focusedMonthIndex : null}
+                />
             </div>
             
-            <div className="p-3 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center text-xs text-slate-500">
-                <div className="flex items-center gap-4">
-                    <span className="flex items-center gap-1"><Save size={12} /> Auto-saves on Enter/Blur</span>
-                    <span>Edits are written to exact rows in sheet</span>
+            {/* Footer / Info */}
+            <div className="mt-auto p-4 bg-slate-50 dark:bg-slate-850/80 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] text-slate-500 font-medium">
+                <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+                    <span className="flex items-center gap-1.5"><Save size={12} className="text-blue-500" /> Auto-saves on Enter / Blur</span>
+                    <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-500" /> Changes sync to Google Sheet</span>
                 </div>
-                {isLoading && <span className="flex items-center gap-2 text-blue-500"><Loader2 size={12} className="animate-spin" /> Syncing...</span>}
+                {isLoading && (
+                    <span className="flex items-center gap-2 text-blue-500 bg-blue-500/10 px-3 py-1 rounded-full animate-pulse">
+                        <RefreshCw size={12} className="animate-spin" /> Syncing...
+                    </span>
+                )}
             </div>
         </div>
     );

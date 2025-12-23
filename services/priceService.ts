@@ -33,63 +33,98 @@ const COINGECKO_MAP: Record<string, string> = {
   'EOS': 'eos'
 };
 
+interface CacheEntry {
+  price: number;
+  timestamp: number;
+}
+
+// In-memory cache for prices
+const PRICE_CACHE: Record<string, CacheEntry> = {};
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+
 /**
  * Fetches live prices for a list of tickers.
  * Uses CoinGecko for crypto and Yahoo Finance (via proxy) for stocks.
+ * Implements a simple memory cache to minimize external network requests.
  */
 export const fetchLivePrices = async (tickers: string[], currency: string = 'cad'): Promise<Record<string, number>> => {
   const prices: Record<string, number> = {};
+  const now = Date.now();
+  const normalizedCurrency = currency.toLowerCase();
   
-  // 1. Separate Crypto vs Stocks
-  const uniqueTickers = Array.from(new Set(tickers.map(t => t.toUpperCase())));
-  const cryptoTickers: string[] = [];
-  const stockTickers: string[] = [];
+  // 1. Identify which tickers need a fresh fetch vs which are in cache
+  const uniqueRequested = Array.from(new Set(tickers.map(t => t.toUpperCase())));
+  const tickersToFetch: string[] = [];
 
-  uniqueTickers.forEach(t => {
+  uniqueRequested.forEach(ticker => {
+    // Cache key includes currency to ensure accuracy if user were to change base currency
+    const cacheKey = `${ticker}_${normalizedCurrency}`;
+    const cached = PRICE_CACHE[cacheKey];
+
+    if (cached && (now - cached.timestamp < CACHE_TTL)) {
+      prices[ticker] = cached.price;
+    } else {
+      tickersToFetch.push(ticker);
+    }
+  });
+
+  // If everything is cached, return immediately
+  if (tickersToFetch.length === 0) {
+    return prices;
+  }
+
+  // 2. Separate the needed tickers into Crypto vs Stocks
+  const cryptoToFetch: string[] = [];
+  const stocksToFetch: string[] = [];
+
+  tickersToFetch.forEach(t => {
       if (COINGECKO_MAP[t]) {
-          cryptoTickers.push(t);
+          cryptoToFetch.push(t);
       } else {
           // Filter out likely invalid or placeholder tickers
           if (t && t !== 'UNKNOWN' && !t.includes('DOLLAR')) {
-              stockTickers.push(t);
+              stocksToFetch.push(t);
           }
       }
   });
 
   const promises = [];
 
-  // 2. Fetch Crypto (CoinGecko)
-  if (cryptoTickers.length > 0) {
+  // 3. Fetch Crypto (CoinGecko)
+  if (cryptoToFetch.length > 0) {
       promises.push((async () => {
         try {
-            const idsToFetch = cryptoTickers.map(t => COINGECKO_MAP[t]);
+            const idsToFetch = cryptoToFetch.map(t => COINGECKO_MAP[t]);
             const idsParam = idsToFetch.join(',');
-            const url = `https://api.coingecko.com/api/v3/simple/price?ids=${idsParam}&vs_currencies=${currency.toLowerCase()}`;
+            const url = `https://api.coingecko.com/api/v3/simple/price?ids=${idsParam}&vs_currencies=${normalizedCurrency}`;
             const res = await fetch(url);
             if (res.ok) {
                 const data = await res.json();
-                cryptoTickers.forEach(t => {
+                cryptoToFetch.forEach(t => {
                     const id = COINGECKO_MAP[t];
-                    if (data[id] && data[id][currency.toLowerCase()]) {
-                        prices[t] = data[id][currency.toLowerCase()];
+                    if (data[id] && data[id][normalizedCurrency]) {
+                        const price = data[id][normalizedCurrency];
+                        prices[t] = price;
+                        // Update cache
+                        PRICE_CACHE[`${t}_${normalizedCurrency}`] = { price, timestamp: now };
                     }
                 });
             }
         } catch (e) {
-            console.warn("Crypto fetch failed", e);
+            console.warn("Crypto price fetch failed", e);
         }
       })());
   }
 
-  // 3. Fetch Stocks (Yahoo Finance via AllOrigins Proxy)
-  if (stockTickers.length > 0) {
+  // 4. Fetch Stocks (Yahoo Finance via AllOrigins Proxy)
+  if (stocksToFetch.length > 0) {
       promises.push((async () => {
         try {
             // Yahoo Finance v7 Quotes API supports multiple symbols
-            const symbols = stockTickers.join(',');
+            const symbols = stocksToFetch.join(',');
             // Using AllOrigins as a reliable free CORS proxy
             // Add timestamp to prevent proxy caching
-            const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&_t=${Date.now()}`;
+            const targetUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&_t=${now}`;
             const proxyUrl = "https://api.allorigins.win/raw?url=";
             
             const res = await fetch(`${proxyUrl}${encodeURIComponent(targetUrl)}`);
@@ -101,13 +136,15 @@ export const fetchLivePrices = async (tickers: string[], currency: string = 'cad
                 quotes.forEach((q: any) => {
                     const symbol = q.symbol.toUpperCase();
                     if (q.regularMarketPrice) {
-                        // Yahoo returns price in native currency.
-                        prices[symbol] = q.regularMarketPrice;
+                        const price = q.regularMarketPrice;
+                        prices[symbol] = price;
+                        // Update cache
+                        PRICE_CACHE[`${symbol}_${normalizedCurrency}`] = { price, timestamp: now };
                     }
                 });
             }
         } catch (e) {
-            console.warn("Stock fetch failed", e);
+            console.warn("Stock price fetch failed", e);
         }
       })());
   }

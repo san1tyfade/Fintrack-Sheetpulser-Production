@@ -1,6 +1,5 @@
-
 import React, { useMemo, useState, memo } from 'react';
-import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry, PriceCache } from '../types';
+import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, BarChart, Bar, ReferenceLine } from 'recharts';
 import { ArrowUpRight, DollarSign, Wallet, X, Loader2, TrendingUp, TrendingDown, Scale, PieChart as PieIcon } from 'lucide-react';
 import { convertToBase, formatBaseCurrency, formatNativeCurrency, PRIMARY_CURRENCY } from '../services/currencyService';
@@ -15,7 +14,6 @@ interface DashboardProps {
   isLoading?: boolean;
   exchangeRates?: ExchangeRates;
   isDarkMode?: boolean;
-  priceCache?: PriceCache;
 }
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
@@ -24,6 +22,7 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 
 /**
  * Parses a YYYY-MM-DD string into a local Date object.
+ * This avoids the UTC off-by-one error in Western time zones like MST.
  */
 const parseISOToLocal = (isoStr: string): Date => {
     if (!isoStr) return new Date();
@@ -367,8 +366,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     expenseData = [], 
     isLoading = false, 
     exchangeRates,
-    isDarkMode = true,
-    priceCache = {}
+    isDarkMode = true
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
@@ -378,21 +376,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const groups: Record<string, number> = {};
 
     assets.forEach(asset => {
-      // Logic for using live prices if it's an investment and we have a ticker
-      let effectiveValue = asset.value;
-      if (isInvestmentAsset(asset)) {
-          // If the asset name itself is a common ticker (e.g. "BTC"), or has a matching price in cache
-          // We look for any key in priceCache that matches normalized asset name
-          const nName = asset.name.toUpperCase().trim();
-          if (priceCache[nName]) {
-              // We assume Asset.value is the quantity if it's a dedicated ticker asset
-              // This is a common pattern for "Crypto" assets in simple sheets
-              // But safer is to check if it has a small numerical value that looks like quantity
-              // For simplicity, we stick to the asset.value unless it's known to be a ticker
-          }
-      }
-
-      const baseVal = convertToBase(effectiveValue, asset.currency, exchangeRates);
+      const baseVal = convertToBase(asset.value, asset.currency, exchangeRates);
       nw += baseVal;
       if (isInvestmentAsset(asset)) inv += baseVal;
       if (isCashAsset(asset)) cash += baseVal;
@@ -413,7 +397,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       totalCash: cash,
       allocationData: alloc
     };
-  }, [assets, exchangeRates, priceCache]);
+  }, [assets, exchangeRates]);
 
   // --- Percentage Change Calculation ---
   const netWorthChange = useMemo(() => {
@@ -422,6 +406,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const latestLoggedValue = sorted[0].value;
     if (latestLoggedValue === 0) return null;
     
+    // Compare current calculated net worth with latest historical entry
     return ((netWorth - latestLoggedValue) / latestLoggedValue) * 100;
   }, [netWorth, netWorthHistory]);
 

@@ -15,13 +15,13 @@ interface NavigationProps {
 
 export const Navigation: React.FC<NavigationProps> = ({ currentView, setView, onSync, isSyncing, lastUpdated }) => {
   const navItems = [
-    { id: ViewState.DASHBOARD, label: 'Dashboard', icon: LayoutDashboard },
-    { id: ViewState.ASSETS, label: 'Assets', icon: Wallet },
-    { id: ViewState.INVESTMENTS, label: 'Investments', icon: TrendingUp },
-    { id: ViewState.TRADES, label: 'Trades', icon: History },
-    { id: ViewState.INCOME, label: 'Income & Expense', icon: Banknote },
-    { id: ViewState.INFORMATION, label: 'Information', icon: Info },
-    { id: ViewState.SETTINGS, label: 'Settings', icon: Settings },
+    { id: ViewState.DASHBOARD, label: 'Dashboard', icon: LayoutDashboard, targetId: 'nav-dashboard' },
+    { id: ViewState.ASSETS, label: 'Assets', icon: Wallet, targetId: 'nav-assets' },
+    { id: ViewState.INVESTMENTS, label: 'Investments', icon: TrendingUp, targetId: 'nav-investments' },
+    { id: ViewState.TRADES, label: 'Trades', icon: History, targetId: 'nav-trades' },
+    { id: ViewState.INCOME, label: 'Income & Expense', icon: Banknote, targetId: 'nav-income' },
+    { id: ViewState.INFORMATION, label: 'Information', icon: Info, targetId: 'nav-information' },
+    { id: ViewState.SETTINGS, label: 'Settings', icon: Settings, targetId: 'nav-settings' },
   ];
 
   return (
@@ -41,6 +41,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentView, setView, on
             return (
                 <button
                 key={item.id}
+                id={item.targetId}
                 onClick={() => setView(item.id)}
                 className={`flex flex-col md:flex-row items-center md:space-x-3 p-2 md:px-4 md:py-3 rounded-xl transition-all duration-200 flex-shrink-0
                     ${isActive 
@@ -72,6 +73,7 @@ export const Navigation: React.FC<NavigationProps> = ({ currentView, setView, on
       {/* Sync Status / Manual Refresh (Desktop) */}
       <div className="hidden md:block p-4 border-t border-slate-200 dark:border-slate-700/50 space-y-3">
         <button 
+            id="desktop-sync-btn"
             onClick={onSync}
             disabled={isSyncing}
             className={`w-full flex items-center justify-center space-x-2 p-3 rounded-lg text-sm font-medium transition-all

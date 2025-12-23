@@ -64,6 +64,7 @@ export interface DebtEntry {
   amountOwed: number;
   interestRate: number;
   monthlyPayment: number;
+  date?: string;
 }
 
 export interface NetWorthEntry {
@@ -145,9 +146,9 @@ export enum ViewState {
 
 export type ExchangeRates = Record<string, number>;
 
-export interface PriceCacheItem {
-  price: number;
-  timestamp: number;
+export interface TourStep {
+  targetId: string;
+  title: string;
+  content: string;
+  view: ViewState;
 }
-
-export type PriceCache = Record<string, PriceCacheItem>;

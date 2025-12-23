@@ -1,7 +1,7 @@
 
 import React, { useMemo, memo, useState, useEffect } from 'react';
 import { Subscription, BankAccount, DebtEntry } from '../types';
-import { CreditCard, Landmark, Calendar, Tag, Loader2, TrendingDown, Flame, Plus, Pencil, Trash2, X, Save } from 'lucide-react';
+import { CreditCard, Landmark, Calendar, Tag, Loader2, TrendingDown, Flame, Plus, Pencil, Trash2, X, Save, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import { formatBaseCurrency, PRIMARY_CURRENCY } from '../services/currencyService';
 
 interface InformationViewProps {
@@ -16,6 +16,16 @@ interface InformationViewProps {
   onEditAccount?: (acc: BankAccount) => Promise<void>;
   onDeleteAccount?: (acc: BankAccount) => Promise<void>;
 }
+
+// --- Helper for Debt precision ---
+const formatDebtAmount = (amount: number) => {
+    return new Intl.NumberFormat('en-CA', { 
+        style: 'currency', 
+        currency: PRIMARY_CURRENCY,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2 
+    }).format(amount);
+};
 
 // --- Modals ---
 
@@ -199,6 +209,7 @@ export const InformationView: React.FC<InformationViewProps> = ({
   const [editingAcc, setEditingAcc] = useState<BankAccount | null>(null);
   const [isAddingAcc, setIsAddingAcc] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showAllDebt, setShowAllDebt] = useState(false); // Collapsed by default
 
   const totalMonthlyCost = useMemo(() => {
     const subCost = subscriptions.reduce((acc, sub) => {
@@ -225,6 +236,16 @@ export const InformationView: React.FC<InformationViewProps> = ({
       finally { setDeletingId(null); }
   };
 
+  // Skip the first row as requested, and hide $0.00 entries
+  const visibleEntries = useMemo(() => {
+    return debtEntries
+      .slice(1) // Skip the redundant summary/header row
+      .filter(debt => Math.abs(debt.amountOwed) > 0.001); // Hide zero balances
+  }, [debtEntries]);
+
+  const visibleDebt = showAllDebt ? visibleEntries : visibleEntries.slice(0, 1);
+  const hasMultipleDebt = visibleEntries.length > 1;
+
   return (
     <div className="space-y-12 animate-fade-in pb-20">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -250,24 +271,47 @@ export const InformationView: React.FC<InformationViewProps> = ({
           
           {/* Liabilities */}
           <div className="space-y-4">
-              <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2 mb-4">
-                  <TrendingDown size={20} className="text-red-500" /> Liabilities & Debt
-              </h3>
-              <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
-                <table className="w-full text-left">
+              <div className="flex justify-between items-center mb-4 px-1">
+                  <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2">
+                      <TrendingDown size={20} className="text-red-500" /> Liabilities & Debt
+                  </h3>
+                  {hasMultipleDebt && (
+                      <button 
+                        onClick={() => setShowAllDebt(!showAllDebt)}
+                        className="text-xs font-bold text-blue-500 flex items-center gap-1 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 transition-colors bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg"
+                      >
+                          {showAllDebt ? (
+                              <><ChevronUp size={14} /> Show Less</>
+                          ) : (
+                              <><ChevronDown size={14} /> Show All ({visibleEntries.length})</>
+                          )}
+                      </button>
+                  )}
+              </div>
+              <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm transition-all">
+                <table className="w-full text-left table-auto">
                     <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
                         <tr>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Debt Name</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Owed</th>
+                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"><span className="flex items-center gap-1"><Clock size={12}/> Date</span></th>
+                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Owed</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                        {debtEntries.map(debt => (
+                        {visibleDebt.map(debt => (
                             <tr key={debt.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                                <td className="p-4 font-bold text-slate-900 dark:text-white">{debt.name}</td>
-                                <td className="p-4 text-right font-bold text-red-500">{formatBaseCurrency(debt.amountOwed)}</td>
+                                <td className="p-4 text-xs font-medium text-slate-500 dark:text-slate-400 font-mono">
+                                    {debt.name || '-'}
+                                </td>
+                                <td className="p-4 text-right font-bold text-red-500 font-mono text-sm sm:text-base">
+                                    {formatDebtAmount(debt.amountOwed)}
+                                </td>
                             </tr>
                         ))}
+                        {visibleDebt.length === 0 && (
+                            <tr>
+                                <td colSpan={2} className="p-10 text-center text-slate-400 italic">No valid debt entries found. Sync the 'debt' tab to load entries.</td>
+                            </tr>
+                        )}
                     </tbody>
                 </table>
               </div>
@@ -275,7 +319,7 @@ export const InformationView: React.FC<InformationViewProps> = ({
 
           {/* Subscriptions */}
           <div className="space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center px-1">
                   <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2">
                       <CreditCard size={20} className="text-purple-500" /> Recurring Subscriptions
                   </h3>
@@ -285,9 +329,9 @@ export const InformationView: React.FC<InformationViewProps> = ({
                 <table className="w-full text-left">
                     <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
                         <tr>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Service</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Cost</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Service</th>
+                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Cost</th>
+                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -315,7 +359,7 @@ export const InformationView: React.FC<InformationViewProps> = ({
 
           {/* Accounts */}
           <div className="space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center px-1">
                   <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2">
                       <Landmark size={20} className="text-emerald-500" /> Banking Accounts
                   </h3>
@@ -325,9 +369,9 @@ export const InformationView: React.FC<InformationViewProps> = ({
                 <table className="w-full text-left">
                     <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
                         <tr>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Institution</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Card / Method</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Institution</th>
+                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Card / Method</th>
+                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
