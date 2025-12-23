@@ -5,7 +5,6 @@ import { getAccessToken } from './authService';
 
 declare global {
   interface Window {
-    google: any;
     gapi: any;
   }
 }
@@ -29,19 +28,24 @@ export const openPicker = async (): Promise<PickerResult | null> => {
   return new Promise((resolve, reject) => {
     const showPicker = () => {
       try {
+        const google = window.google;
+        if (!google || !google.picker) {
+           throw new Error("Google Picker API not loaded.");
+        }
+
         // Build the Google Picker dialog
-        const picker = new window.google.picker.PickerBuilder()
-          .addView(window.google.picker.ViewId.SPREADSHEETS)
+        const picker = new google.picker.PickerBuilder()
+          .addView(google.picker.ViewId.SPREADSHEETS)
           .setOAuthToken(token)
           .setCallback((data: any) => {
-            if (data.action === window.google.picker.Action.PICKED) {
+            if (data.action === google.picker.Action.PICKED) {
               const doc = data.docs[0];
               resolve({
                 id: doc.id,
                 name: doc.name,
                 url: doc.url
               });
-            } else if (data.action === window.google.picker.Action.CANCEL) {
+            } else if (data.action === google.picker.Action.CANCEL) {
               resolve(null);
             }
           })

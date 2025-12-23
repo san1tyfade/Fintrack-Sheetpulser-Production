@@ -1,11 +1,9 @@
 
-
-import React, { useMemo, useState, useEffect, memo } from 'react';
-import { Investment, Asset, Trade, ExchangeRates } from '../types';
+import React, { useMemo, memo } from 'react';
+import { Investment, Asset, Trade, ExchangeRates, PriceCache, PriceCacheItem } from '../types';
 import { Layers, Shield, Home, Coins, PieChart as PieIcon, Loader2, Radio, Zap, ArrowUpRight, GraduationCap, Lock, Landmark, Briefcase } from 'lucide-react';
 import { normalizeTicker } from '../services/geminiService';
 import { convertToBase, PRIMARY_CURRENCY } from '../services/currencyService';
-import { fetchLivePrices } from '../services/priceService';
 
 interface InvestmentsListProps {
   investments: Investment[]; 
@@ -13,25 +11,27 @@ interface InvestmentsListProps {
   trades?: Trade[];
   isLoading?: boolean;
   exchangeRates?: ExchangeRates;
+  priceCache?: PriceCache;
+  isFetchingPrices?: boolean;
 }
 
 // --- Helper Functions (Pure) ---
 
-const getPrice = (ticker: string, livePrices: Record<string, number>, trades: Trade[], fallback: number) => {
-    if (livePrices[ticker]) return livePrices[ticker];
+const getPrice = (ticker: string, priceCache: PriceCache, trades: Trade[], fallback: number) => {
+    const cached = priceCache[ticker];
+    if (cached) return cached.price;
 
     if (trades && trades.length > 0) {
         const tradeWithPrice = trades.find(t => (t.marketPrice || 0) > 0);
         if (tradeWithPrice) return tradeWithPrice.marketPrice!;
-        
         if (trades[0].price) return Math.abs(trades[0].price);
     }
     return fallback || 0;
 };
 
-const getValue = (quantity: number, price: number, manualMarketValue?: number, isLive?: boolean) => {
+const getValue = (quantity: number, price: number, manualMarketValue?: number, hasLive?: boolean) => {
     if (Math.abs(quantity) < 0.000001) return 0;
-    if (isLive) return quantity * price;
+    if (hasLive) return quantity * price;
     if ((manualMarketValue || 0) > 0) return manualMarketValue!;
     return quantity * price;
 };
@@ -82,11 +82,11 @@ const HoldingsTable = memo(({ holdings }: { holdings: any[] }) => (
                             <tr key={h.ticker} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                                 <td className="p-4 font-bold text-slate-900 dark:text-white flex items-center gap-2">
                                     {h.ticker}
-                                    {h.isLive && <Zap size={12} className="text-yellow-500 dark:text-yellow-400 fill-yellow-500 dark:fill-yellow-400 animate-pulse" />}
+                                    {h.hasLive && <Zap size={12} className="text-yellow-500 dark:text-yellow-400 fill-yellow-500 dark:fill-yellow-400 animate-pulse" />}
                                 </td>
                                 <td className="p-4 text-right text-slate-600 dark:text-slate-300 font-mono">{h.quantity.toLocaleString()}</td>
                                 <td className="p-4 text-right text-slate-600 dark:text-slate-300 font-mono">{`$${h.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
-                                <td className={`p-4 text-right font-bold font-mono ${h.isLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>{`$${h.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</td>
+                                <td className={`p-4 text-right font-bold font-mono ${h.hasLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>{`$${h.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</td>
                             </tr>
                         ))}
                         {holdings.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-500">No holdings found.</td></tr>}
@@ -97,17 +97,17 @@ const HoldingsTable = memo(({ holdings }: { holdings: any[] }) => (
     </div>
 ));
 
-const AccountGroup = memo(({ name, items, livePrices, tradesByTicker, isLoading }: { name: string, items: Investment[], livePrices: Record<string, number>, tradesByTicker: Map<string, Trade[]>, isLoading: boolean }) => {
+const AccountGroup = memo(({ name, items, priceCache, tradesByTicker, isLoading }: { name: string, items: Investment[], priceCache: PriceCache, tradesByTicker: Map<string, Trade[]>, isLoading: boolean }) => {
     
     // Calculate total value for header
     const groupTotal = useMemo(() => {
         return items.reduce((sum, item) => {
             const ticker = normalizeTicker(item.ticker);
-            const isLive = !!livePrices[ticker];
-            const price = getPrice(ticker, livePrices, tradesByTicker.get(ticker) || [], item.currentPrice);
-            return sum + getValue(item.quantity, price, item.marketValue, isLive);
+            const hasLive = !!priceCache[ticker];
+            const price = getPrice(ticker, priceCache, tradesByTicker.get(ticker) || [], item.currentPrice);
+            return sum + getValue(item.quantity, price, item.marketValue, hasLive);
         }, 0);
-    }, [items, livePrices, tradesByTicker]);
+    }, [items, priceCache, tradesByTicker]);
 
     return (
         <div className="space-y-4 animate-fade-in">
@@ -136,10 +136,10 @@ const AccountGroup = memo(({ name, items, livePrices, tradesByTicker, isLoading 
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                             {items.map((inv) => {
                                 const ticker = normalizeTicker(inv.ticker);
-                                const isLive = !!livePrices[ticker];
+                                const hasLive = !!priceCache[ticker];
                                 const trades = tradesByTicker.get(ticker) || [];
-                                const price = getPrice(ticker, livePrices, trades, inv.currentPrice);
-                                const val = getValue(inv.quantity, price, inv.marketValue, isLive);
+                                const price = getPrice(ticker, priceCache, trades, inv.currentPrice);
+                                const val = getValue(inv.quantity, price, inv.marketValue, hasLive);
                                 const cost = inv.quantity * inv.avgPrice;
                                 const gain = val - cost;
                                 const gainPct = cost > 0 ? ((gain / cost) * 100).toFixed(2) : '0.00';
@@ -149,14 +149,14 @@ const AccountGroup = memo(({ name, items, livePrices, tradesByTicker, isLoading 
                                         <td className="p-4 font-bold text-slate-900 dark:text-white">
                                             <div className="flex items-center gap-2">
                                                 {inv.ticker} 
-                                                {isLive && <Zap size={10} className="text-yellow-500 dark:text-yellow-400 fill-yellow-500 dark:fill-yellow-400 animate-pulse" />}
+                                                {hasLive && <Zap size={10} className="text-yellow-500 dark:text-yellow-400 fill-yellow-500 dark:fill-yellow-400 animate-pulse" />}
                                             </div>
                                             <div className="text-[10px] text-slate-500 uppercase tracking-wider font-normal mt-0.5">{inv.name !== inv.ticker ? inv.name : inv.assetClass}</div>
                                         </td>
                                         <td className="p-4 text-right text-slate-600 dark:text-slate-300 font-mono">{inv.quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
                                         <td className="p-4 text-right text-slate-600 dark:text-slate-300 font-mono">{`$${inv.avgPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
-                                        <td className={`p-4 text-right font-medium font-mono ${isLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>{`$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
-                                        <td className={`p-4 text-right font-bold font-mono ${isLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>{`$${val.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</td>
+                                        <td className={`p-4 text-right font-medium font-mono ${hasLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>{`$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                                        <td className={`p-4 text-right font-bold font-mono ${hasLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>{`$${val.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</td>
                                         <td className={`p-4 text-right font-medium font-mono ${gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                                             <div className="flex flex-col items-end">
                                                 <span>{gain >= 0 ? '+' : ''}{gain.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
@@ -177,10 +177,7 @@ const AccountGroup = memo(({ name, items, livePrices, tradesByTicker, isLoading 
 
 // --- Main Component ---
 
-export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, assets = [], trades = [], isLoading = false, exchangeRates }) => {
-  const [livePrices, setLivePrices] = useState<Record<string, number>>({});
-  const [isFetchingPrices, setIsFetchingPrices] = useState(false);
-  const [lastPriceUpdate, setLastPriceUpdate] = useState<Date | null>(null);
+export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, assets = [], trades = [], isLoading = false, exchangeRates, priceCache = {}, isFetchingPrices = false }) => {
 
   // 1. Trades Lookup Map (Optimized)
   const tradesByTicker = useMemo(() => {
@@ -196,34 +193,7 @@ export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, a
       return map;
   }, [trades]);
 
-  // 2. Live Price Fetching
-  useEffect(() => {
-    const uniqueTickers = new Set<string>();
-    investments.forEach(i => uniqueTickers.add(normalizeTicker(i.ticker)));
-    tradesByTicker.forEach((_, t) => uniqueTickers.add(t));
-    
-    const tickerList = Array.from(uniqueTickers).filter(t => t !== 'UNKNOWN');
-    if (tickerList.length === 0) return;
-
-    const updatePrices = async () => {
-        setIsFetchingPrices(true);
-        try {
-            const newPrices = await fetchLivePrices(tickerList, PRIMARY_CURRENCY);
-            setLivePrices(prev => ({ ...prev, ...newPrices }));
-            setLastPriceUpdate(new Date());
-        } catch (e) {
-            console.error("Price update failed", e);
-        } finally {
-            setIsFetchingPrices(false);
-        }
-    };
-
-    updatePrices();
-    const interval = setInterval(updatePrices, 60000); // 60s poll
-    return () => clearInterval(interval);
-  }, [investments, tradesByTicker]);
-
-  // 3. Prepare All Investments (Reconciled + Synthetic)
+  // 2. Prepare All Investments (Reconciled + Synthetic)
   const allInvestments = useMemo<Investment[]>(() => {
     const sheetTickers = new Set(investments.map(i => normalizeTicker(i.ticker)));
     const synthetic: Investment[] = [];
@@ -269,7 +239,7 @@ export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, a
     return [...investments, ...synthetic];
   }, [investments, tradesByTicker]);
 
-  // 4. Group by Account
+  // 3. Group by Account
   const groupedInvestments = useMemo(() => {
     const groups: Record<string, Investment[]> = {};
     
@@ -298,18 +268,18 @@ export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, a
     });
   }, [allInvestments]);
 
-  // 5. Aggregated Holdings
+  // 4. Aggregated Holdings
   const aggregatedHoldings = useMemo(() => {
-    const map = new Map<string, { ticker: string, quantity: number, price: number, totalValue: number, isLive: boolean }>();
+    const map = new Map<string, { ticker: string, quantity: number, price: number, totalValue: number, hasLive: boolean }>();
 
     allInvestments.forEach(inv => {
         const ticker = normalizeTicker(inv.ticker);
-        const isLive = !!livePrices[ticker];
-        const price = getPrice(ticker, livePrices, tradesByTicker.get(ticker) || [], inv.currentPrice);
-        const value = getValue(inv.quantity, price, inv.marketValue, isLive);
+        const hasLive = !!priceCache[ticker];
+        const price = getPrice(ticker, priceCache, tradesByTicker.get(ticker) || [], inv.currentPrice);
+        const value = getValue(inv.quantity, price, inv.marketValue, hasLive);
 
         if (!map.has(ticker)) {
-            map.set(ticker, { ticker: inv.ticker, quantity: 0, price, totalValue: 0, isLive });
+            map.set(ticker, { ticker: inv.ticker, quantity: 0, price, totalValue: 0, hasLive });
         }
         
         const entry = map.get(ticker)!;
@@ -320,9 +290,9 @@ export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, a
     return Array.from(map.values())
         .filter(h => Math.abs(h.quantity) > 0.000001 || h.totalValue > 0.01)
         .sort((a, b) => b.totalValue - a.totalValue);
-  }, [allInvestments, livePrices, tradesByTicker]);
+  }, [allInvestments, priceCache, tradesByTicker]);
 
-  // 6. Allocations
+  // 5. Allocations
   const netWorth = useMemo(() => {
     return assets.reduce((sum, item) => sum + convertToBase(item.value, item.currency, exchangeRates), 0);
   }, [assets, exchangeRates]);
@@ -336,9 +306,9 @@ export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, a
 
       allInvestments.forEach(inv => {
           const ticker = normalizeTicker(inv.ticker);
-          const isLive = !!livePrices[ticker];
-          const price = getPrice(ticker, livePrices, tradesByTicker.get(ticker) || [], inv.currentPrice);
-          const val = getValue(inv.quantity, price, inv.marketValue, isLive);
+          const hasLive = !!priceCache[ticker];
+          const price = getPrice(ticker, priceCache, tradesByTicker.get(ticker) || [], inv.currentPrice);
+          const val = getValue(inv.quantity, price, inv.marketValue, hasLive);
 
           const combined = check((inv.accountName || '') + " " + (inv.assetClass || '') + " " + (inv.name || ''));
           
@@ -376,7 +346,13 @@ export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, a
           pension: Math.max(invStats.pension, assetStats.pension),
           crypto: Math.max(invStats.crypto, assetStats.crypto) 
       };
-  }, [allInvestments, assets, livePrices, tradesByTicker, exchangeRates]);
+  }, [allInvestments, assets, priceCache, tradesByTicker, exchangeRates]);
+
+  const lastPriceUpdate = useMemo(() => {
+    // Cast Object.values to PriceCacheItem[] to avoid "unknown" type error
+    const timestamps = (Object.values(priceCache) as PriceCacheItem[]).map(p => p.timestamp);
+    return timestamps.length > 0 ? new Date(Math.max(...timestamps)) : null;
+  }, [priceCache]);
 
   const secondCardConfig = useMemo(() => {
       const { fhsa, rrsp, resp, lira, pension } = allocations;
@@ -386,7 +362,6 @@ export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, a
       if (lira > 0) return { title: "LIRA Allocation", value: lira, icon: Lock, color: "text-slate-500 dark:text-slate-400" };
       if (pension > 0) return { title: "Pension Allocation", value: pension, icon: Landmark, color: "text-slate-500 dark:text-slate-400" };
       
-      // Default to FHSA if nothing else
       return { title: "FHSA Allocation", value: 0, icon: Home, color: "text-blue-500 dark:text-blue-400" };
   }, [allocations]);
 
@@ -407,7 +382,7 @@ export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, a
         </div>
         {lastPriceUpdate && (
             <div className="text-right">
-                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Live Prices Updated</p>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Price Cache Updated</p>
                 <p className="text-sm font-mono text-emerald-600 dark:text-emerald-400">{lastPriceUpdate.toLocaleTimeString()}</p>
             </div>
         )}
@@ -415,8 +390,6 @@ export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, a
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <AllocationCard title="TFSA Allocation" value={allocations.tfsa} total={netWorth} icon={Shield} colorClass="text-emerald-500 dark:text-emerald-400" isLoading={isLoading} />
-        
-        {/* Dynamic Second Card */}
         <AllocationCard 
             title={secondCardConfig.title} 
             value={secondCardConfig.value} 
@@ -425,7 +398,6 @@ export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, a
             colorClass={secondCardConfig.color} 
             isLoading={isLoading} 
         />
-
         <AllocationCard title="Crypto Allocation" value={allocations.crypto} total={netWorth} icon={Coins} colorClass="text-orange-500 dark:text-orange-400" isLoading={isLoading} />
       </div>
 
@@ -438,7 +410,7 @@ export const InvestmentsList: React.FC<InvestmentsListProps> = ({ investments, a
             key={accountName} 
             name={accountName} 
             items={items} 
-            livePrices={livePrices} 
+            priceCache={priceCache} 
             tradesByTicker={tradesByTicker} 
             isLoading={isLoading} 
         />

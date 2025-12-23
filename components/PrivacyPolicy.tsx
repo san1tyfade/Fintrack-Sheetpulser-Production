@@ -4,9 +4,10 @@ import { Shield, Lock, Eye, Database, Globe, Cloud, ArrowLeft } from 'lucide-rea
 interface PrivacyPolicyProps {
   onBack?: () => void;
   isInline?: boolean;
+  isStandalone?: boolean;
 }
 
-export const PrivacyPolicy: React.FC<PrivacyPolicyProps> = ({ onBack, isInline = false }) => {
+export const PrivacyPolicy: React.FC<PrivacyPolicyProps> = ({ onBack, isInline = false, isStandalone = false }) => {
   const sections = [
     {
       title: "Local-First Data Processing",
@@ -51,7 +52,7 @@ export const PrivacyPolicy: React.FC<PrivacyPolicyProps> = ({ onBack, isInline =
       {!isInline && (
         <header className="mb-10">
           <div className="flex items-center justify-between mb-6">
-            {onBack && (
+            {!isStandalone && onBack && (
               <button 
                 onClick={onBack}
                 className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"

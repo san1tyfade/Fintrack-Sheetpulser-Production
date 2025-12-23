@@ -1,3 +1,4 @@
+
 import { UserProfile } from '../types';
 
 // Types for Google Identity Services
@@ -16,6 +17,7 @@ declare global {
           revoke: (accessToken: string, done: () => void) => void;
         };
       };
+      picker?: any;
     };
   }
 }

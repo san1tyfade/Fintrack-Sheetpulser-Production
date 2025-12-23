@@ -1,3 +1,4 @@
+
 export interface Asset {
   id: string;
   rowIndex?: number;
@@ -138,7 +139,15 @@ export enum ViewState {
   INCOME = 'INCOME',
   INFORMATION = 'INFORMATION',
   SETTINGS = 'SETTINGS',
-  PRIVACY = 'PRIVACY'
+  PRIVACY = 'PRIVACY',
+  TERMS = 'TERMS'
 }
 
 export type ExchangeRates = Record<string, number>;
+
+export interface PriceCacheItem {
+  price: number;
+  timestamp: number;
+}
+
+export type PriceCache = Record<string, PriceCacheItem>;
