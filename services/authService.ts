@@ -22,10 +22,13 @@ let currentClientId: string | null = null;
 
 let resolveQueue: Array<{ resolve: (token: string) => void }> = [];
 
+/**
+ * Narrowed scopes to follow the principle of least privilege.
+ * 'drive.readonly' was removed to avoid broad "See and download all files" warnings.
+ * The app now only interacts with files it creates or that the user explicitly picks.
+ */
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
-  'https://www.googleapis.com/auth/drive.readonly',
-  'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/userinfo.profile'
 ].join(' ');
 
@@ -83,6 +86,11 @@ export const fetchUserProfile = async (token: string): Promise<UserProfile | nul
   return res.ok ? res.json() : null;
 };
 
+/**
+ * Attempt to copy the master template. 
+ * With drive.file scope, this will likely fail with 403/404 because the app 
+ * does not have read access to the master file yet.
+ */
 export const copyMasterTemplate = async (templateId: string, fileName: string) => {
   const token = getAccessToken();
   if (!token) throw new Error("Auth required");
@@ -93,7 +101,12 @@ export const copyMasterTemplate = async (templateId: string, fileName: string) =
     body: JSON.stringify({ name: fileName })
   });
 
-  if (!res.ok) throw new Error(res.status === 404 ? "Template not found or not shared." : "Copy failed.");
+  if (!res.ok) {
+      if (res.status === 403 || res.status === 404) {
+          throw new Error("PRIVACY_RESTRICTION");
+      }
+      throw new Error("Copy failed.");
+  }
   const data = await res.json();
   return { id: data.id, url: `https://docs.google.com/spreadsheets/d/${data.id}/edit` };
 };
