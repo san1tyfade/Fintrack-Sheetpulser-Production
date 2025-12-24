@@ -1,5 +1,5 @@
 
-import { Asset, Investment, Trade, Subscription, BankAccount, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, LedgerData, LedgerCategory, LedgerItem } from "../types";
+import { Asset, Investment, Trade, Subscription, BankAccount, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, LedgerData, LedgerCategory, LedgerItem, TaxRecord } from "../types";
 
 // --- Utilities ---
 
@@ -11,9 +11,6 @@ const generateId = () => {
 };
 
 // Security: Prevent Prototype Pollution and Property Shadowing
-/**
- * Exported to fix: Module '"../services/geminiService"' declares 'isSafeKey' locally, but it is not exported.
- */
 export const isSafeKey = (key: string) => {
     const forbidden = [
         '__proto__', 
@@ -51,7 +48,8 @@ const HEADER_KEYWORDS: Record<string, string[]> = {
     subscriptions: ['name', 'service', 'cost', 'price', 'period', 'active'],
     accounts: ['institution', 'bank', 'account', 'type', 'card'],
     logData: ['date', 'worth', 'total', 'balance', 'net'],
-    debt: ['name', 'owed', 'rate', 'payment', 'loan', 'mortgage', 'principal', 'finance', 'date']
+    debt: ['name', 'owed', 'rate', 'payment', 'loan', 'mortgage', 'principal', 'finance', 'date'],
+    taxAccounts: ['account type', 'transcation type', 'record type', 'transaction type', 'date', 'value', 'description']
 };
 
 export const normalizeTicker = (ticker: string): string => {
@@ -121,15 +119,12 @@ const formatDateToLocalISO = (dateObj: Date): string => {
     return `${year}-${month}-${day}`;
 };
 
-/**
- * Parses various date formats into ISO string (YYYY-MM-DD).
- */
 const parseFlexibleDate = (dateStr: string): string | null => {
     if (!dateStr || dateStr.length < 2) return null; 
     
     const cleanStr = dateStr.trim();
+    if (cleanStr.toLowerCase().includes('yyyy-mm-dd')) return null;
     
-    // 1. Explicit Regex Matching for numeric formats
     const isoMatch = cleanStr.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
     if (isoMatch) {
         const y = parseInt(isoMatch[1]);
@@ -191,8 +186,6 @@ const resolveIndices = (headers: string[], mapping: Record<string, string[]>) =>
     return indices;
 };
 
-// --- Specialized Parser Factories ---
-
 const createAssetParser = (headers: string[]) => {
     const idx = resolveIndices(headers, {
         name: ['name', 'account', 'asset', 'item', 'description', 'holding', 'security'],
@@ -213,10 +206,6 @@ const createAssetParser = (headers: string[]) => {
         if (nameLower.includes('fhsa')) type = 'FHSA';
         else if (nameLower.includes('tfsa')) type = 'TFSA';
         else if (nameLower.includes('rrsp')) type = 'RRSP';
-        else if (nameLower.includes('crypto') || nameLower.includes('btc') || nameLower.includes('eth')) type = 'Crypto';
-        else if (nameLower.includes('fund') || nameLower.includes('savings')) type = 'Cash';
-        else if (nameLower.includes('car') || nameLower.includes('vehicle')) type = 'Personal Property';
-        else if (nameLower.includes('house') || nameLower.includes('real estate') || nameLower.includes('property') || nameLower.includes('condo')) type = 'Real Estate';
         return { id: generateId(), name, type, value, currency, lastUpdated };
     };
 };
@@ -344,9 +333,6 @@ const createLogDataParser = (headers: string[]) => {
         if (!dateStr && value === 0) return null;
         const dateObj = new Date(dateStr);
         if (isNaN(dateObj.getTime())) return null;
-        if (dateObj.getFullYear() === 2001 && !dateStr.includes('2001')) {
-            dateObj.setFullYear(new Date().getFullYear());
-        }
         return { date: formatDateToLocalISO(dateObj), value };
     };
 };
@@ -370,6 +356,169 @@ const createDebtParser = (headers: string[]) => {
         if (amountOwed === 0 && monthlyPayment === 0 && interestRate === 0) return null;
         return { id: generateId(), name, amountOwed, interestRate, monthlyPayment, date };
     };
+};
+
+const createTaxRecordParser = (headers: string[]) => {
+    const idx = resolveIndices(headers, {
+        recordType: ['account type', 'record type', 'type', 'category'],
+        accountFund: ['account/fund', 'fund', 'account'],
+        transactionType: ['transcation type', 'transaction type', 'trans type', 'action'],
+        date: ['date', 'time'],
+        value: ['value', 'amount'],
+        description: ['description', 'note', 'details']
+    });
+
+    return (values: string[]): TaxRecord | null => {
+        const recordType = (idx.recordType !== -1 ? values[idx.recordType] : '') || 'Unknown';
+        const value = parseNumber(idx.value !== -1 ? values[idx.value] : '0');
+        if (recordType === 'Unknown' && value === 0) return null;
+        
+        const dateStr = idx.date !== -1 ? values[idx.date] : '';
+        const date = parseFlexibleDate(dateStr) || '2000-01-01';
+
+        return {
+            id: generateId(),
+            recordType,
+            accountFund: (idx.accountFund !== -1 ? values[idx.accountFund] : '') || '',
+            transactionType: (idx.transactionType !== -1 ? values[idx.transactionType] : '') || '',
+            date,
+            value,
+            description: (idx.description !== -1 ? values[idx.description] : '') || ''
+        };
+    };
+};
+
+export const parseRawData = async <T,>(
+  rawData: string,
+  dataType: 'assets' | 'investments' | 'trades' | 'subscriptions' | 'accounts' | 'logData' | 'debt' | 'income' | 'detailedExpenses' | 'detailedIncome' | 'taxAccounts'
+): Promise<T> => {
+  if (!rawData) {
+      if (dataType === 'income') return { income: [], expenses: [] } as T;
+      if (dataType === 'detailedExpenses' || dataType === 'detailedIncome') return { months: [], categories: [] } as T;
+      return [] as T;
+  }
+  const lines = rawData.split(/\r?\n/);
+  if (lines.length < 2) {
+      if (dataType === 'income') return { income: [], expenses: [] } as T;
+      if (dataType === 'detailedExpenses' || dataType === 'detailedIncome') return { months: [], categories: [] } as T;
+      return [] as T; 
+  }
+  if (dataType === 'income') return parseIncomeAndExpenses(lines) as T;
+  if (dataType === 'detailedExpenses') return parseDetailedExpenses(lines) as T;
+  if (dataType === 'detailedIncome') return parseDetailedIncome(lines) as T;
+
+  let headerIndex = -1;
+  const keywords = HEADER_KEYWORDS[dataType] || [];
+  for (let i = 0; i < Math.min(lines.length, 15); i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const rowValues = parseCSVLine(line).map(v => v.toLowerCase().trim());
+      const nonEmptyCells = rowValues.filter(v => v !== '');
+      if (nonEmptyCells.length >= 2 && keywords.some(k => rowValues.some(v => v.includes(k)))) {
+          headerIndex = i;
+          break;
+      }
+  }
+
+  if (headerIndex === -1) {
+      for (let i = 0; i < lines.length; i++) if (lines[i].trim().length > 0) { headerIndex = i; break; }
+  }
+  if (headerIndex === -1) return [] as T;
+
+  const originalHeaders = parseCSVLine(lines[headerIndex]);
+  let parser: ((values: string[]) => any | null) | null = null;
+  switch(dataType) {
+      case 'assets': parser = createAssetParser(originalHeaders); break;
+      case 'investments': parser = createInvestmentParser(originalHeaders); break;
+      case 'trades': parser = createTradeParser(originalHeaders); break;
+      case 'subscriptions': parser = createSubscriptionParser(originalHeaders); break;
+      case 'accounts': parser = createAccountParser(originalHeaders); break;
+      case 'logData': parser = createLogDataParser(originalHeaders); break;
+      case 'debt': parser = createDebtParser(originalHeaders); break;
+      case 'taxAccounts': parser = createTaxRecordParser(originalHeaders); break;
+  }
+  if (!parser) return [] as T;
+
+  const results: any[] = [];
+  for (let i = headerIndex + 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    if (values.every(v => v === '')) continue;
+    const parsedItem = parser(values);
+    if (parsedItem) {
+        if (['trades', 'assets', 'subscriptions', 'accounts', 'debt', 'taxAccounts'].includes(dataType)) {
+            (parsedItem as any).rowIndex = i;
+        }
+        results.push(parsedItem);
+    }
+  }
+  return results as T;
+};
+
+const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
+    const incomeEntries: IncomeEntry[] = [];
+    const expenseEntries: ExpenseEntry[] = [];
+    const parsedLines: { [index: number]: string[] } = {};
+    const dateRowIndices: number[] = [];
+    let bestIncomeRowIndex = -1;
+    let bestIncomePriority = 0; 
+    const expenseRows: { name: string; rowIndex: number }[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const row = parseCSVLine(lines[i]);
+        parsedLines[i] = row;
+        const firstCell = (row[0] || '').trim();
+        const lowerFirst = firstCell.toLowerCase();
+        let dateCount = 0;
+        for (let c = 1; c < Math.min(row.length, 6); c++) if (parseFlexibleDate(row[c])) dateCount++;
+        if (dateCount >= 2) { dateRowIndices.push(i); continue; }
+        if (lowerFirst.includes('income') && !lowerFirst.includes('net')) {
+             let hasData = false;
+             for (let c = 1; c < row.length; c++) if (parseNumber(row[c]) !== 0) { hasData = true; break; }
+             if (hasData) {
+                 const priority = lowerFirst.includes('total') ? 2 : 1;
+                 if (priority > bestIncomePriority) { bestIncomeRowIndex = i; bestIncomePriority = priority; }
+                 else if (priority === bestIncomePriority && bestIncomeRowIndex === -1) bestIncomeRowIndex = i;
+             }
+             continue; 
+        }
+        if (lowerFirst && !lowerFirst.includes('net income') && !lowerFirst.includes('total') && !lowerFirst.includes('monthly savings') && !lowerFirst.includes('balance') && !lowerFirst.includes('expense categorie')) {
+               let hasNumericData = false;
+               for(let c = 1; c < row.length; c++) if (parseNumber(row[c]) !== 0) { hasNumericData = true; break; }
+               if (hasNumericData) expenseRows.push({ name: firstCell, rowIndex: i });
+           }
+    }
+    let incomeDateRowIndex = -1;
+    if (bestIncomeRowIndex !== -1) {
+        for (let j = dateRowIndices.length - 1; j >= 0; j--) if (dateRowIndices[j] < bestIncomeRowIndex) { incomeDateRowIndex = dateRowIndices[j]; break; }
+    }
+    if (bestIncomeRowIndex !== -1 && incomeDateRowIndex !== -1) {
+        const dateRow = parsedLines[incomeDateRowIndex];
+        const valRow = parsedLines[bestIncomeRowIndex];
+        for (let c = 1; c < dateRow.length; c++) {
+            if (c >= valRow.length) break;
+            const iso = parseFlexibleDate(dateRow[c]);
+            const val = parseNumber(valRow[c]);
+            if (iso) incomeEntries.push({ date: iso, monthStr: dateRow[c], amount: val });
+        }
+    }
+    if (expenseRows.length > 0 && dateRowIndices.length > 0) {
+        const dateRow = parsedLines[dateRowIndices[0]];
+        for (let c = 1; c < dateRow.length; c++) {
+            const iso = parseFlexibleDate(dateRow[c]);
+            if (!iso) continue;
+            const categories: Record<string, number> = {};
+            let total = 0;
+            expenseRows.forEach(exp => {
+                if (!isSafeKey(exp.name)) return;
+                const val = Math.abs(parseNumber(parsedLines[exp.rowIndex][c] || '0'));
+                categories[exp.name] = val;
+                total += val;
+            });
+            if (total > 0) expenseEntries.push({ date: iso, monthStr: dateRow[c], categories, total });
+        }
+    }
+    const sortByDate = (a: any, b: any) => a.date.localeCompare(b.date);
+    return { income: incomeEntries.sort(sortByDate), expenses: expenseEntries.sort(sortByDate) };
 };
 
 export const parseDetailedIncome = (lines: string[]): LedgerData => {
@@ -505,136 +654,4 @@ export const parseDetailedExpenses = (lines: string[]): LedgerData => {
     }
     if (currentCategory && !categories.find(c => c.name === currentCategory?.name)) categories.push(currentCategory);
     return { months, categories };
-};
-
-const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
-    const incomeEntries: IncomeEntry[] = [];
-    const expenseEntries: ExpenseEntry[] = [];
-    const parsedLines: { [index: number]: string[] } = {};
-    const dateRowIndices: number[] = [];
-    let bestIncomeRowIndex = -1;
-    let bestIncomePriority = 0; 
-    const expenseRows: { name: string; rowIndex: number }[] = [];
-
-    for (let i = 0; i < lines.length; i++) {
-        const row = parseCSVLine(lines[i]);
-        parsedLines[i] = row;
-        const firstCell = (row[0] || '').trim();
-        const lowerFirst = firstCell.toLowerCase();
-        let dateCount = 0;
-        for (let c = 1; c < Math.min(row.length, 6); c++) if (parseFlexibleDate(row[c])) dateCount++;
-        if (dateCount >= 2) { dateRowIndices.push(i); continue; }
-        if (lowerFirst.includes('income') && !lowerFirst.includes('net')) {
-             let hasData = false;
-             for (let c = 1; c < row.length; c++) if (parseNumber(row[c]) !== 0) { hasData = true; break; }
-             if (hasData) {
-                 const priority = lowerFirst.includes('total') ? 2 : 1;
-                 if (priority > bestIncomePriority) { bestIncomeRowIndex = i; bestIncomePriority = priority; }
-                 else if (priority === bestIncomePriority && bestIncomeRowIndex === -1) bestIncomeRowIndex = i;
-             }
-             continue; 
-        }
-        if (lowerFirst && !lowerFirst.includes('net income') && !lowerFirst.includes('total') && !lowerFirst.includes('monthly savings') && !lowerFirst.includes('balance') && !lowerFirst.includes('expense categorie')) {
-               let hasNumericData = false;
-               for(let c = 1; c < row.length; c++) if (parseNumber(row[c]) !== 0) { hasNumericData = true; break; }
-               if (hasNumericData) expenseRows.push({ name: firstCell, rowIndex: i });
-           }
-    }
-    let incomeDateRowIndex = -1;
-    if (bestIncomeRowIndex !== -1) {
-        for (let j = dateRowIndices.length - 1; j >= 0; j--) if (dateRowIndices[j] < bestIncomeRowIndex) { incomeDateRowIndex = dateRowIndices[j]; break; }
-    }
-    if (bestIncomeRowIndex !== -1 && incomeDateRowIndex !== -1) {
-        const dateRow = parsedLines[incomeDateRowIndex];
-        const valRow = parsedLines[bestIncomeRowIndex];
-        for (let c = 1; c < dateRow.length; c++) {
-            if (c >= valRow.length) break;
-            const iso = parseFlexibleDate(dateRow[c]);
-            const val = parseNumber(valRow[c]);
-            if (iso) incomeEntries.push({ date: iso, monthStr: dateRow[c], amount: val });
-        }
-    }
-    if (expenseRows.length > 0 && dateRowIndices.length > 0) {
-        const dateRow = parsedLines[dateRowIndices[0]];
-        for (let c = 1; c < dateRow.length; c++) {
-            const iso = parseFlexibleDate(dateRow[c]);
-            if (!iso) continue;
-            const categories: Record<string, number> = {};
-            let total = 0;
-            expenseRows.forEach(exp => {
-                if (!isSafeKey(exp.name)) return;
-                const val = Math.abs(parseNumber(parsedLines[exp.rowIndex][c] || '0'));
-                categories[exp.name] = val;
-                total += val;
-            });
-            if (total > 0) expenseEntries.push({ date: iso, monthStr: dateRow[c], categories, total });
-        }
-    }
-    const sortByDate = (a: any, b: any) => a.date.localeCompare(b.date);
-    return { income: incomeEntries.sort(sortByDate), expenses: expenseEntries.sort(sortByDate) };
-};
-
-export const parseRawData = async <T,>(
-  rawData: string,
-  dataType: 'assets' | 'investments' | 'trades' | 'subscriptions' | 'accounts' | 'logData' | 'debt' | 'income' | 'detailedExpenses' | 'detailedIncome'
-): Promise<T> => {
-  if (!rawData) {
-      if (dataType === 'income') return { income: [], expenses: [] } as T;
-      if (dataType === 'detailedExpenses' || dataType === 'detailedIncome') return { months: [], categories: [] } as T;
-      return [] as T;
-  }
-  const lines = rawData.split(/\r?\n/);
-  if (lines.length < 2) {
-      if (dataType === 'income') return { income: [], expenses: [] } as T;
-      if (dataType === 'detailedExpenses' || dataType === 'detailedIncome') return { months: [], categories: [] } as T;
-      return [] as T; 
-  }
-  if (dataType === 'income') return parseIncomeAndExpenses(lines) as T;
-  if (dataType === 'detailedExpenses') return parseDetailedExpenses(lines) as T;
-  if (dataType === 'detailedIncome') return parseDetailedIncome(lines) as T;
-
-  let headerIndex = -1;
-  const keywords = HEADER_KEYWORDS[dataType] || [];
-  for (let i = 0; i < Math.min(lines.length, 15); i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const rowValues = parseCSVLine(line).map(v => v.toLowerCase().trim());
-      const nonEmptyCells = rowValues.filter(v => v !== '');
-      if (nonEmptyCells.length >= 2 && keywords.some(k => rowValues.some(v => v.includes(k)))) {
-          headerIndex = i;
-          break;
-      }
-  }
-
-  if (headerIndex === -1) {
-      for (let i = 0; i < lines.length; i++) if (lines[i].trim().length > 0) { headerIndex = i; break; }
-  }
-  if (headerIndex === -1) return [] as T;
-
-  const originalHeaders = parseCSVLine(lines[headerIndex]);
-  let parser: ((values: string[]) => any | null) | null = null;
-  switch(dataType) {
-      case 'assets': parser = createAssetParser(originalHeaders); break;
-      case 'investments': parser = createInvestmentParser(originalHeaders); break;
-      case 'trades': parser = createTradeParser(originalHeaders); break;
-      case 'subscriptions': parser = createSubscriptionParser(originalHeaders); break;
-      case 'accounts': parser = createAccountParser(originalHeaders); break;
-      case 'logData': parser = createLogDataParser(originalHeaders); break;
-      case 'debt': parser = createDebtParser(originalHeaders); break;
-  }
-  if (!parser) return [] as T;
-
-  const results: any[] = [];
-  for (let i = headerIndex + 1; i < lines.length; i++) {
-    const values = parseCSVLine(lines[i]);
-    if (values.every(v => v === '')) continue;
-    const parsedItem = parser(values);
-    if (parsedItem) {
-        if (['trades', 'assets', 'subscriptions', 'accounts', 'debt'].includes(dataType)) {
-            (parsedItem as any).rowIndex = i;
-        }
-        results.push(parsedItem);
-    }
-  }
-  return results as T;
 };

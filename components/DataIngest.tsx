@@ -40,10 +40,12 @@ const CompactTabInput = memo(({ label, value, onChange, onSync, sheetId, isSynci
     return () => clearTimeout(timer);
   }, [value, sheetId]);
 
+  const displayLabel = label === 'taxAccounts' ? 'Tax Records' : label;
+
   return (
     <div className="flex flex-col gap-1.5 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700/50 hover:border-blue-400/30 transition-all group">
       <div className="flex justify-between items-center">
-        <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider truncate mr-2 group-hover:text-blue-500 transition-colors">{label}</label>
+        <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider truncate mr-2 group-hover:text-blue-500 transition-colors">{displayLabel}</label>
         {isSyncing || status === 'checking' ? <Loader2 size={10} className="animate-spin" /> : 
          status === 'valid' ? <CheckCircle2 size={10} className="text-emerald-500" /> : 
          status === 'invalid' ? <AlertCircle size={10} className="text-red-500" /> : null}
@@ -244,7 +246,7 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
           {[
             { t: 'Portfolio', i: Layers, k: ['assets', 'investments', 'trades'] },
             { t: 'Flow', i: DollarSign, k: ['income', 'expenses', 'subscriptions', 'debt'] },
-            { t: 'Logs', i: History, k: ['accounts', 'logData'] }
+            { t: 'Logs & Records', i: History, k: ['accounts', 'logData', 'taxAccounts'] }
           ].map(cat => (
             <div key={cat.t} className="space-y-3">
               <div className="flex items-center gap-2 px-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><cat.i size={12} /> {cat.t}</div>

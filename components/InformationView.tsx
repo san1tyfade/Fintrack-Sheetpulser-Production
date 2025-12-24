@@ -1,13 +1,15 @@
 
 import React, { useMemo, memo, useState, useEffect } from 'react';
-import { Subscription, BankAccount, DebtEntry } from '../types';
-import { CreditCard, Landmark, Calendar, Tag, Loader2, TrendingDown, Flame, Plus, Pencil, Trash2, X, Save, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { Subscription, BankAccount, DebtEntry, TaxRecord } from '../types';
+import { CreditCard, Landmark, Calendar, Tag, Loader2, TrendingDown, Flame, Plus, Pencil, Trash2, X, Save, ChevronDown, ChevronUp, Clock, ShieldCheck } from 'lucide-react';
 import { formatBaseCurrency, PRIMARY_CURRENCY } from '../services/currencyService';
+import { TaxRoomTracker } from './TaxRoomTracker';
 
 interface InformationViewProps {
   subscriptions: Subscription[];
   accounts: BankAccount[];
   debtEntries?: DebtEntry[];
+  taxRecords?: TaxRecord[];
   isLoading?: boolean;
   onAddSubscription?: (sub: Subscription) => Promise<void>;
   onEditSubscription?: (sub: Subscription) => Promise<void>;
@@ -15,6 +17,9 @@ interface InformationViewProps {
   onAddAccount?: (acc: BankAccount) => Promise<void>;
   onEditAccount?: (acc: BankAccount) => Promise<void>;
   onDeleteAccount?: (acc: BankAccount) => Promise<void>;
+  onAddTaxRecord?: (rec: TaxRecord) => Promise<void>;
+  onEditTaxRecord?: (rec: TaxRecord) => Promise<void>;
+  onDeleteTaxRecord?: (rec: TaxRecord) => Promise<void>;
 }
 
 // --- Helper for Debt precision ---
@@ -200,9 +205,10 @@ const AccountModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolea
 // --- View ---
 
 export const InformationView: React.FC<InformationViewProps> = ({ 
-    subscriptions, accounts, debtEntries = [], isLoading = false,
+    subscriptions, accounts, debtEntries = [], taxRecords = [], isLoading = false,
     onAddSubscription, onEditSubscription, onDeleteSubscription,
-    onAddAccount, onEditAccount, onDeleteAccount
+    onAddAccount, onEditAccount, onDeleteAccount,
+    onAddTaxRecord, onEditTaxRecord, onDeleteTaxRecord
 }) => {
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
   const [isAddingSub, setIsAddingSub] = useState(false);
@@ -236,11 +242,10 @@ export const InformationView: React.FC<InformationViewProps> = ({
       finally { setDeletingId(null); }
   };
 
-  // Skip the first row as requested, and hide $0.00 entries
   const visibleEntries = useMemo(() => {
     return debtEntries
-      .slice(1) // Skip the redundant summary/header row
-      .filter(debt => Math.abs(debt.amountOwed) > 0.001); // Hide zero balances
+      .slice(1) 
+      .filter(debt => Math.abs(debt.amountOwed) > 0.001); 
   }, [debtEntries]);
 
   const visibleDebt = showAllDebt ? visibleEntries : visibleEntries.slice(0, 1);
@@ -254,7 +259,7 @@ export const InformationView: React.FC<InformationViewProps> = ({
             Information
             {isLoading && <Loader2 className="animate-spin text-blue-500" size={24} />}
           </h2>
-          <p className="text-slate-500 dark:text-slate-400">Recurring expenses, liabilities, and account details.</p>
+          <p className="text-slate-500 dark:text-slate-400">Tax advantages, liabilities, and account details.</p>
         </div>
         <div className="bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50 p-4 rounded-xl flex items-center gap-4 min-w-[240px] shadow-lg">
              <div className="p-3 bg-red-500/10 rounded-lg text-red-500"><Flame size={24} /></div>
@@ -269,6 +274,15 @@ export const InformationView: React.FC<InformationViewProps> = ({
       
       <div className={`space-y-12 transition-all duration-500 ${isLoading ? 'opacity-70 pointer-events-none' : 'opacity-100'}`}>
           
+          {/* Taxable Room Tracker */}
+          <TaxRoomTracker 
+            taxRecords={taxRecords} 
+            isLoading={isLoading} 
+            onAddTaxRecord={onAddTaxRecord}
+            onEditTaxRecord={onEditTaxRecord}
+            onDeleteTaxRecord={onDeleteTaxRecord}
+          />
+
           {/* Liabilities */}
           <div className="space-y-4">
               <div className="flex justify-between items-center mb-4 px-1">
@@ -292,7 +306,7 @@ export const InformationView: React.FC<InformationViewProps> = ({
                 <table className="w-full text-left table-auto">
                     <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
                         <tr>
-                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"><span className="flex items-center gap-1"><Clock size={12}/> Date</span></th>
+                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"><span className="flex items-center gap-1"><Clock size={12}/> Account / Type</span></th>
                             <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Owed</th>
                         </tr>
                     </thead>

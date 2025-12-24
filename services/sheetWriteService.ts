@@ -1,6 +1,6 @@
 
 import { getAccessToken } from './authService';
-import { Trade, Asset, Subscription, BankAccount } from '../types';
+import { Trade, Asset, Subscription, BankAccount, TaxRecord } from '../types';
 
 const BASE_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
 
@@ -63,6 +63,17 @@ const mapAccountToRow = (acc: BankAccount, headers: string[]) => {
     setCellValue(row, headers, ['transaction type', 'class'], acc.transactionType);
     setCellValue(row, headers, ['currency', 'curr', 'ccy'], acc.currency);
     setCellValue(row, headers, ['purpose', 'description', 'usage', 'merchant'], acc.purpose);
+    return row;
+};
+
+const mapTaxRecordToRow = (record: TaxRecord, headers: string[]) => {
+    const row = new Array(headers.length).fill(null);
+    setCellValue(row, headers, ['account type', 'record type', 'type', 'category'], record.recordType);
+    setCellValue(row, headers, ['account/fund', 'fund', 'account'], record.accountFund);
+    setCellValue(row, headers, ['transcation type', 'transaction type', 'trans type', 'action'], record.transactionType);
+    setCellValue(row, headers, ['date', 'time'], record.date);
+    setCellValue(row, headers, ['value', 'amount'], record.value);
+    setCellValue(row, headers, ['description', 'note', 'details'], record.description);
     return row;
 };
 
@@ -168,6 +179,16 @@ export const addAccountToSheet = async (sheetId: string, tabName: string, acc: B
 export const updateAccountInSheet = async (sheetId: string, tabName: string, rowIndex: number, acc: BankAccount) => {
     const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
     return updateRowInSheet(sheetId, tabName, rowIndex, mapAccountToRow(acc, headers));
+};
+
+export const addTaxRecordToSheet = async (sheetId: string, tabName: string, record: TaxRecord) => {
+    const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
+    return appendToSheet(sheetId, tabName, mapTaxRecordToRow(record, headers));
+};
+
+export const updateTaxRecordInSheet = async (sheetId: string, tabName: string, rowIndex: number, record: TaxRecord) => {
+    const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
+    return updateRowInSheet(sheetId, tabName, rowIndex, mapTaxRecordToRow(record, headers));
 };
 
 export const deleteRowFromSheet = async (sheetId: string, tabName: string, rowIndex: number) => {

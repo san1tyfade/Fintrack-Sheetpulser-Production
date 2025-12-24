@@ -1,4 +1,5 @@
 
+
 export interface Asset {
   id: string;
   rowIndex?: number;
@@ -67,6 +68,17 @@ export interface DebtEntry {
   date?: string;
 }
 
+export interface TaxRecord {
+  id: string;
+  rowIndex?: number;
+  recordType: string;
+  accountFund: string;
+  transactionType: string;
+  date: string;
+  value: number;
+  description: string;
+}
+
 export interface NetWorthEntry {
   date: string;
   value: number;
@@ -91,6 +103,7 @@ export interface IncomeAndExpenses {
   expenses: ExpenseEntry[];
 }
 
+// Added missing LedgerItem interface to resolve compilation errors
 export interface LedgerItem {
   name: string;
   monthlyValues: number[];
@@ -98,6 +111,7 @@ export interface LedgerItem {
   rowIndex?: number;
 }
 
+// Added missing LedgerCategory interface to resolve compilation errors
 export interface LedgerCategory {
   name: string;
   subCategories: LedgerItem[];
@@ -123,6 +137,7 @@ export interface SheetConfig {
     debt: string;
     income: string;
     expenses: string;
+    taxAccounts: string;
   };
 }
 

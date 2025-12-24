@@ -11,7 +11,7 @@ import { DataIngest } from './components/DataIngest';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { TermsOfService } from './components/TermsOfService';
 import { GuidedTour } from './components/GuidedTour';
-import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile, TourStep } from './types';
+import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile, TourStep, TaxRecord } from './types';
 import { fetchSheetData, extractSheetId } from './services/sheetService';
 import { parseRawData } from './services/geminiService';
 import { fetchLiveRates } from './services/currencyService';
@@ -23,6 +23,7 @@ import {
   addAssetToSheet, updateAssetInSheet,
   addSubscriptionToSheet, updateSubscriptionInSheet,
   addAccountToSheet, updateAccountInSheet,
+  addTaxRecordToSheet, updateTaxRecordInSheet,
   updateLedgerValue
 } from './services/sheetWriteService';
 import { Moon, Sun } from 'lucide-react';
@@ -41,7 +42,8 @@ const DEFAULT_CONFIG: SheetConfig = {
     logData: 'logdata',
     debt: 'debt',
     income: 'Income',
-    expenses: 'Expense'
+    expenses: 'Expense',
+    taxAccounts: 'Taxable Accounts'
   }
 };
 
@@ -70,6 +72,7 @@ function App() {
   const [subscriptions, setSubscriptions] = useIndexedDB<Subscription[]>('fintrack_subscriptions', []);
   const [accounts, setAccounts] = useIndexedDB<BankAccount[]>('fintrack_accounts', []);
   const [debtEntries, setDebtEntries] = useIndexedDB<DebtEntry[]>('fintrack_debt', []);
+  const [taxRecords, setTaxRecords] = useIndexedDB<TaxRecord[]>('fintrack_tax_records', []);
   const [netWorthHistory, setNetWorthHistory] = useIndexedDB<NetWorthEntry[]>('fintrack_history', []);
   const [incomeData, setIncomeData] = useIndexedDB<IncomeEntry[]>('fintrack_income', []);
   const [expenseData, setExpenseData] = useIndexedDB<ExpenseEntry[]>('fintrack_expenses', []);
@@ -165,6 +168,7 @@ function App() {
                     case 'accounts': setAccounts(await fetchSafe(tabName, 'accounts')); break;
                     case 'logData': setNetWorthHistory(await fetchSafe(tabName, 'logData')); break;
                     case 'debt': setDebtEntries(await fetchSafe(tabName, 'debt')); break;
+                    case 'taxAccounts': setTaxRecords(await fetchSafe(tabName, 'taxAccounts')); break;
                     case 'income': 
                         const finData = await fetchSafe<IncomeAndExpenses>(tabName, 'income'); 
                         setIncomeData(finData.income); 
@@ -184,7 +188,7 @@ function App() {
             : (e.message || "Sync failed. Check tab names.");
         setSyncStatus({ type: 'error', msg: errorMsg }); 
     } finally { setIsSyncing(false); }
-  }, [sheetConfig, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setDebtEntries, setIncomeData, setExpenseData, setDetailedExpenses, setDetailedIncome, setLastUpdatedStr, setAuthSession]);
+  }, [sheetConfig, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setDebtEntries, setTaxRecords, setIncomeData, setExpenseData, setDetailedExpenses, setDetailedIncome, setLastUpdatedStr, setAuthSession]);
 
   const handleDeleteGeneric = useCallback(async (item: any, tabName: string, setter: (val: any | ((prev: any[]) => any[])) => void) => {
     if (!sheetConfig.sheetId || !tabName) throw new Error("Config missing.");
@@ -245,13 +249,16 @@ function App() {
           )}
           {currentView === ViewState.INFORMATION && (
             <InformationView 
-              subscriptions={subscriptions} accounts={accounts} debtEntries={debtEntries} isLoading={isSyncing}
+              subscriptions={subscriptions} accounts={accounts} debtEntries={debtEntries} taxRecords={taxRecords} isLoading={isSyncing}
               onAddSubscription={s => addSubscriptionToSheet(sheetConfig.sheetId, sheetConfig.tabNames.subscriptions, s).then(() => syncData(['subscriptions']))}
               onEditSubscription={s => handleEditGeneric(s, sheetConfig.tabNames.subscriptions, updateSubscriptionInSheet, setSubscriptions)}
               onDeleteSubscription={s => handleDeleteGeneric(s, sheetConfig.tabNames.subscriptions, setSubscriptions)}
               onAddAccount={a => addAccountToSheet(sheetConfig.sheetId, sheetConfig.tabNames.accounts, a).then(() => syncData(['accounts']))}
               onEditAccount={a => handleEditGeneric(a, sheetConfig.tabNames.accounts, updateAccountInSheet, setAccounts)}
               onDeleteAccount={a => handleDeleteGeneric(a, sheetConfig.tabNames.accounts, setAccounts)}
+              onAddTaxRecord={r => addTaxRecordToSheet(sheetConfig.sheetId, sheetConfig.tabNames.taxAccounts, r).then(() => syncData(['taxAccounts']))}
+              onEditTaxRecord={r => handleEditGeneric(r, sheetConfig.tabNames.taxAccounts, updateTaxRecordInSheet, setTaxRecords)}
+              onDeleteTaxRecord={r => handleDeleteGeneric(r, sheetConfig.tabNames.taxAccounts, setTaxRecords)}
             />
           )}
           {currentView === ViewState.SETTINGS && (
