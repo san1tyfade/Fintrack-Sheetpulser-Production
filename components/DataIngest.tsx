@@ -1,5 +1,5 @@
 
-import { AlertCircle, ArrowRight, Check, CheckCircle2, Cloud, DollarSign, Download, ExternalLink, FileSpreadsheet, History, Info, Layers, Loader2, LogOut, Moon, RefreshCw, Scale, Search, Shield, ShieldCheck, Sparkles, Sun, Trash2, CalendarDays, DownloadCloud, UploadCloud, Database, Clock, CloudUpload, CloudDownload, Box, HardDrive, Lock, Unlock } from 'lucide-react';
+import { AlertCircle, ArrowRight, Check, CheckCircle2, Cloud, DollarSign, Download, ExternalLink, FileSpreadsheet, History, Info, Layers, Loader2, LogOut, Moon, RefreshCw, Scale, Search, Shield, ShieldCheck, Sparkles, Sun, Trash2, CalendarDays, DownloadCloud, UploadCloud, Database, Clock, CloudUpload, CloudDownload, Box, HardDrive, Lock, Unlock, Zap, AlertTriangle, PartyPopper } from 'lucide-react';
 import React, { memo, useEffect, useState, useRef } from 'react';
 import { fetchUserProfile, initGoogleAuth, signIn, copyMasterTemplate } from '../services/authService';
 import { openPicker } from '../services/pickerService';
@@ -63,6 +63,172 @@ const CompactTabInput = memo(({ label, value, onChange, onSync, sheetId, isSynci
   );
 });
 
+// --- Phase 1: Rollover Stepper Component ---
+
+const RolloverStepper = ({ 
+    isOpen, 
+    onClose, 
+    onSync, 
+    sheetId, 
+    incomeTab, 
+    expenseTab, 
+    onSuccess 
+}: { 
+    isOpen: boolean; 
+    onClose: () => void; 
+    onSync: (tabs: any[]) => Promise<void>; 
+    sheetId: string;
+    incomeTab: string;
+    expenseTab: string;
+    onSuccess: () => void;
+}) => {
+    const [step, setStep] = useState<'init' | 'syncing' | 'confirm' | 'rolling' | 'done'>('init');
+    const [confirmYear, setConfirmYear] = useState('');
+    const currentYear = new Date().getFullYear();
+    const nextYear = currentYear + 1;
+
+    if (!isOpen) return null;
+
+    const startSync = async () => {
+        setStep('syncing');
+        try {
+            await onSync(['income', 'expenses']);
+            setStep('confirm');
+        } catch (e) {
+            alert("Sync failed before rollover. Please try again.");
+            setStep('init');
+        }
+    };
+
+    const runRollover = async () => {
+        if (confirmYear !== String(currentYear)) {
+            alert(`Please type ${currentYear} to confirm.`);
+            return;
+        }
+        setStep('rolling');
+        try {
+            await resetYearlyLedger(sheetId, incomeTab, expenseTab);
+            setStep('done');
+            onSuccess();
+        } catch (e: any) {
+            alert(`Rollover failed: ${e.message}`);
+            setStep('confirm');
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="p-8 space-y-6">
+                    
+                    {/* Header */}
+                    <div className="flex items-center gap-4">
+                        <div className={`p-3 rounded-2xl ${step === 'done' ? 'bg-emerald-500 text-white' : 'bg-blue-600 text-white'}`}>
+                            {step === 'done' ? <PartyPopper size={24} /> : <Zap size={24} />}
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-black text-slate-900 dark:text-white">Close Financial Year {currentYear}</h3>
+                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Year-End Maintenance Wizard</p>
+                        </div>
+                    </div>
+
+                    {/* Progress indicator */}
+                    <div className="flex gap-2">
+                        {['syncing', 'confirm', 'rolling', 'done'].map((s, idx) => {
+                            const isActive = step === s;
+                            const isPast = ['syncing', 'confirm', 'rolling', 'done'].indexOf(step) > idx;
+                            return (
+                                <div key={s} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${isPast ? 'bg-emerald-500' : isActive ? 'bg-blue-600 animate-pulse' : 'bg-slate-100 dark:bg-slate-700'}`} />
+                            );
+                        })}
+                    </div>
+
+                    <div className="py-4">
+                        {step === 'init' && (
+                            <div className="space-y-4">
+                                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                                    Closing a financial year is a major operation. We will first synchronize your current data to ensure your archives are 100% accurate.
+                                </p>
+                                <button onClick={startSync} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl shadow-xl transition-all">
+                                    Begin Preparation
+                                </button>
+                            </div>
+                        )}
+
+                        {step === 'syncing' && (
+                            <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                                <Loader2 size={48} className="text-blue-500 animate-spin" />
+                                <p className="text-sm font-bold text-slate-900 dark:text-white">Synchronizing {currentYear} Records...</p>
+                                <p className="text-xs text-slate-500">Verifying local vault against Google Sheets</p>
+                            </div>
+                        )}
+
+                        {step === 'confirm' && (
+                            <div className="space-y-6">
+                                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-2xl flex gap-3">
+                                    <AlertTriangle className="text-amber-500 shrink-0" size={20} />
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-bold text-amber-900 dark:text-amber-200 uppercase">What happens next?</p>
+                                        <ul className="text-xs text-amber-800/80 dark:text-amber-300/80 space-y-1 list-disc pl-4">
+                                            <li>Archives "{incomeTab}" to "{incomeTab}-{String(currentYear).slice(-2)}"</li>
+                                            <li>Archives "{expenseTab}" to "{expenseTab}-{String(currentYear).slice(-2)}"</li>
+                                            <li>Wipes current transactions to start {nextYear} at $0</li>
+                                            <li>Historical data remains accessible via Time Machine</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-slate-400">Type "{currentYear}" to confirm</label>
+                                    <input 
+                                        type="text" 
+                                        value={confirmYear} 
+                                        onChange={e => setConfirmYear(e.target.value)}
+                                        placeholder={String(currentYear)}
+                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-center text-xl font-black focus:border-blue-500 outline-none transition-all"
+                                    />
+                                </div>
+                                <div className="flex gap-3">
+                                    <button onClick={onClose} className="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white font-bold py-4 rounded-2xl">Cancel</button>
+                                    <button 
+                                        onClick={runRollover}
+                                        disabled={confirmYear !== String(currentYear)}
+                                        className="flex-[2] bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold py-4 rounded-2xl shadow-xl shadow-blue-500/20 transition-all"
+                                    >
+                                        Archive & Start {nextYear}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {step === 'rolling' && (
+                            <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                                <Loader2 size={48} className="text-emerald-500 animate-spin" />
+                                <p className="text-sm font-bold text-slate-900 dark:text-white">Cloning Sheets & Resetting Ledger...</p>
+                                <p className="text-xs text-slate-500">Communicating with Google Sheets API</p>
+                            </div>
+                        )}
+
+                        {step === 'done' && (
+                            <div className="space-y-6 text-center py-4">
+                                <div className="w-20 h-20 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-2">
+                                    <Check size={40} />
+                                </div>
+                                <div className="space-y-2">
+                                    <h4 className="text-2xl font-black text-slate-900 dark:text-white">Rollover Successful!</h4>
+                                    <p className="text-sm text-slate-500">Your {currentYear} data is safely archived. The active spreadsheet is now ready for {nextYear}.</p>
+                                </div>
+                                <button onClick={onClose} className="w-full bg-slate-900 dark:bg-slate-700 text-white font-bold py-4 rounded-2xl shadow-xl">
+                                    Back to Dashboard
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export const DataIngest: React.FC<DataIngestProps> = (props) => {
   const { config, onConfigChange, onSync, isSyncing, syncingTabs, syncStatus, sheetUrl, onSheetUrlChange, isDarkMode, toggleTheme, userProfile, onProfileChange, onSessionChange, onSignOut, onViewChange, onTourStart } = props;
   const [isAuthLoading, setIsAuthLoading] = useState(false);
@@ -76,6 +242,8 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
   
   const [lastBackupAt, setLastBackupAt] = useIndexedDB<string | null>('fintrack_last_backup_at', null);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useIndexedDB<string | null>('fintrack_last_cloud_sync_at', null);
+
+  const [isRolloverOpen, setIsRolloverOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -128,20 +296,6 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
           const result = await openPicker(config.clientId);
           if (result) { onConfigChange({ ...config, sheetId: result.id }); onSheetUrlChange(result.url); }
       } catch (e) { alert("Picker error"); }
-  };
-
-  const handleYearReset = async () => {
-      const confirmed = confirm("WARNING: This will archive your current Income/Expense data and clear the active sheet for the new year. Continue?");
-      if (!confirmed) return;
-
-      setIsResetting(true);
-      try {
-          await resetYearlyLedger(config.sheetId, config.tabNames.income, config.tabNames.expenses);
-          alert("Success! Sheets archived and active ledger reset.");
-          await onSync();
-          refreshArchives();
-      } catch (e: any) { alert(`Reset failed: ${e.message}`); }
-      finally { setIsResetting(false); }
   };
 
   const handleExport = async () => {
@@ -271,7 +425,41 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
         </div>
       </div>
 
-      {/* Storage & Archive Management (Phase 3) */}
+      {/* Phase 1: Year-End Maintenance */}
+      <div className="bg-white dark:bg-slate-800 border-2 border-blue-500/20 dark:border-blue-500/10 rounded-3xl p-8 shadow-xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none group-hover:bg-blue-500/10 transition-all"></div>
+          <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
+              <div className="p-5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-2xl border border-blue-500/20">
+                  <Zap size={32} />
+              </div>
+              <div className="flex-1 text-center md:text-left space-y-1">
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white">Year-End Maintenance</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Ready to start a new financial chapter? This wizard will archive your current ledger and prepare a fresh, clean spreadsheet for the upcoming year.
+                  </p>
+              </div>
+              <button 
+                onClick={() => setIsRolloverOpen(true)}
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 py-4 rounded-2xl shadow-xl shadow-blue-500/20 transition-all hover:-translate-y-0.5 active:scale-[0.98] whitespace-nowrap"
+              >
+                  Close Financial Year
+              </button>
+          </div>
+
+          <RolloverStepper 
+              isOpen={isRolloverOpen} 
+              onClose={() => setIsRolloverOpen(false)} 
+              onSync={async (tabs) => onSync(tabs)}
+              sheetId={config.sheetId}
+              incomeTab={config.tabNames.income}
+              expenseTab={config.tabNames.expenses}
+              onSuccess={() => {
+                  refreshArchives();
+              }}
+          />
+      </div>
+
+      {/* Storage & Archive Management */}
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-6">
           <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-4">
               <div className="flex items-center gap-3">
