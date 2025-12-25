@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { IncomeEntry, ExpenseEntry, LedgerData } from '../types';
 import { IncomeAnalysis } from './income/IncomeAnalysis';
 import { IncomeLedger } from './income/IncomeLedger';
-import { Loader2, BarChart3, Table2 } from 'lucide-react';
+import { BarChart3, Table2 } from 'lucide-react';
 
 interface IncomeViewProps {
   incomeData: IncomeEntry[];
@@ -12,6 +12,8 @@ interface IncomeViewProps {
   detailedIncome?: LedgerData;
   isLoading?: boolean;
   isDarkMode?: boolean;
+  isReadOnly?: boolean;
+  selectedYear?: number;
   onUpdateExpense?: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
   onUpdateIncome?: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
 }
@@ -25,6 +27,8 @@ export const IncomeView: React.FC<IncomeViewProps> = ({
     detailedIncome,
     isLoading = false, 
     isDarkMode = true,
+    isReadOnly = false,
+    selectedYear = new Date().getFullYear(),
     onUpdateExpense,
     onUpdateIncome
 }) => {
@@ -32,12 +36,8 @@ export const IncomeView: React.FC<IncomeViewProps> = ({
 
   return (
     <div className="h-full flex flex-col">
-       {/* Top Toolbar */}
        <div className="flex justify-between items-end mb-6">
-           <div>
-               {/* Header is handled inside sub-components for specific context, or we can unify here */}
-           </div>
-           
+           <div></div>
            <div className="bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl flex items-center border border-slate-200 dark:border-slate-700">
                <button
                    onClick={() => setMode('ANALYSIS')}
@@ -62,21 +62,23 @@ export const IncomeView: React.FC<IncomeViewProps> = ({
            </div>
        </div>
 
-       {/* Content Area */}
        <div className="flex-1 min-h-0">
            {mode === 'ANALYSIS' ? (
                <IncomeAnalysis 
-                   incomeData={incomeData} 
-                   expenseData={expenseData} 
-                   detailedExpenses={detailedExpenses} 
-                   isLoading={isLoading} 
-                   isDarkMode={isDarkMode} 
-                />
+                 incomeData={incomeData} 
+                 expenseData={expenseData} 
+                 detailedExpenses={detailedExpenses} 
+                 isLoading={isLoading} 
+                 isDarkMode={isDarkMode} 
+                 selectedYear={selectedYear}
+               />
            ) : (
                <IncomeLedger 
                    expenseData={detailedExpenses || { months: [], categories: [] }} 
                    incomeData={detailedIncome || { months: [], categories: [] }}
                    isLoading={isLoading} 
+                   isReadOnly={isReadOnly}
+                   selectedYear={selectedYear}
                    onUpdateExpense={async (cat, sub, m, v) => {
                        if (onUpdateExpense) await onUpdateExpense(cat, sub, m, v);
                    }} 

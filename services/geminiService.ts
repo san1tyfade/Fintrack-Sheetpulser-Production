@@ -48,7 +48,7 @@ const HEADER_KEYWORDS: Record<string, string[]> = {
     subscriptions: ['name', 'service', 'cost', 'price', 'period', 'active'],
     accounts: ['institution', 'bank', 'account', 'type', 'card'],
     logData: ['date', 'worth', 'total', 'balance', 'net'],
-    debt: ['name', 'owed', 'rate', 'payment', 'loan', 'mortgage', 'principal', 'finance', 'date'],
+    debt: ['name', 'owed', 'rate', 'payment', 'loan', 'mortgage', 'student loan'],
     taxAccounts: ['account type', 'transcation type', 'record type', 'transaction type', 'date', 'value', 'description']
 };
 
@@ -103,11 +103,14 @@ const parseCSVLine = (line: string): string[] => {
 
 const parseNumber = (val: string | undefined): number => {
   if (!val) return 0;
-  if (!isNaN(Number(val)) && !val.includes(',')) return parseFloat(val);
-
-  let clean = val.trim();
+  if (typeof val === 'number') return val;
+  
+  let clean = String(val).trim();
+  if (!clean) return 0;
+  
   if (clean.startsWith('(') && clean.endsWith(')')) clean = '-' + clean.slice(1, -1);
-  clean = clean.replace(/[^0-9.-]/g, '');
+  clean = clean.replace(/[$,]/g, '');
+  
   const num = parseFloat(clean);
   return isNaN(num) ? 0 : num;
 };
@@ -121,7 +124,6 @@ const formatDateToLocalISO = (dateObj: Date): string => {
 
 const parseFlexibleDate = (dateStr: string): string | null => {
     if (!dateStr || dateStr.length < 2) return null; 
-    
     const cleanStr = dateStr.trim();
     if (cleanStr.toLowerCase().includes('yyyy-mm-dd')) return null;
     
@@ -135,26 +137,15 @@ const parseFlexibleDate = (dateStr: string): string | null => {
         }
     }
 
-    const usMatch = cleanStr.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
-    if (usMatch) {
-        const m = parseInt(usMatch[1]);
-        const d = parseInt(usMatch[2]);
-        const y = parseInt(usMatch[3]);
-        if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-            return formatDateToLocalISO(new Date(y, m - 1, d));
+    const monthYearMatch = cleanStr.match(/^([A-Za-z]{3})[-/](\d{2,4})$/);
+    if (monthYearMatch) {
+        const mStr = monthYearMatch[1].toLowerCase();
+        const yStr = monthYearMatch[2];
+        const mIdx = MONTH_NAMES.indexOf(mStr);
+        if (mIdx !== -1) {
+            const y = yStr.length === 2 ? 2000 + parseInt(yStr) : parseInt(yStr);
+            return formatDateToLocalISO(new Date(y, mIdx, 1));
         }
-    }
-    
-    const lower = cleanStr.toLowerCase();
-    const normalized = lower.replace(/[\s,]+/g, '-');
-    const mName = MONTH_NAMES.find(m => normalized.startsWith(m));
-    if (mName) {
-        const monthIndex = MONTH_NAMES.indexOf(mName);
-        const remainder = normalized.replace(mName, '').replace(/[^0-9]/g, '');
-        let year = new Date().getFullYear();
-        if (remainder.length === 2) year = 2000 + parseInt(remainder);
-        else if (remainder.length === 4) year = parseInt(remainder);
-        return formatDateToLocalISO(new Date(year, monthIndex, 1));
     }
 
     const d = new Date(dateStr);
@@ -468,29 +459,61 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
         parsedLines[i] = row;
         const firstCell = (row[0] || '').trim();
         const lowerFirst = firstCell.toLowerCase();
+
+        // 1. Detect Date Row (Header)
         let dateCount = 0;
-        for (let c = 1; c < Math.min(row.length, 6); c++) if (parseFlexibleDate(row[c])) dateCount++;
-        if (dateCount >= 2) { dateRowIndices.push(i); continue; }
-        if (lowerFirst.includes('income') && !lowerFirst.includes('net')) {
+        for (let c = 1; c < Math.min(row.length, 14); c++) if (parseFlexibleDate(row[c])) dateCount++;
+        if (dateCount >= 2) { 
+            dateRowIndices.push(i); 
+            // Do not 'continue' here, as the Date Row might also be the start of the Income data in some views
+        }
+
+        // 2. Detect Income Rows (Strictly TOTAL INCOME per user request)
+        if (lowerFirst === 'total income') {
              let hasData = false;
              for (let c = 1; c < row.length; c++) if (parseNumber(row[c]) !== 0) { hasData = true; break; }
              if (hasData) {
-                 const priority = lowerFirst.includes('total') ? 2 : 1;
-                 if (priority > bestIncomePriority) { bestIncomeRowIndex = i; bestIncomePriority = priority; }
-                 else if (priority === bestIncomePriority && bestIncomeRowIndex === -1) bestIncomeRowIndex = i;
+                 const priority = 100;
+                 if (priority > bestIncomePriority) { 
+                    bestIncomeRowIndex = i; 
+                    bestIncomePriority = priority; 
+                 }
              }
              continue; 
         }
-        if (lowerFirst && !lowerFirst.includes('net income') && !lowerFirst.includes('total') && !lowerFirst.includes('monthly savings') && !lowerFirst.includes('balance') && !lowerFirst.includes('expense categorie')) {
+
+        // 3. Detect Expense Rows
+        // IMPROVED: Exclude anything that looks like an income line to prevent detailed income sources from polluting expense charts
+        const isIncomeLine = lowerFirst.includes('income'); 
+        const isCommonExclude = ['net income', 'monthly savings', 'balance', 'expense categorie'].some(key => lowerFirst.includes(key));
+        
+        if (lowerFirst && !isIncomeLine && !isCommonExclude && !lowerFirst.includes('total')) {
                let hasNumericData = false;
                for(let c = 1; c < row.length; c++) if (parseNumber(row[c]) !== 0) { hasNumericData = true; break; }
-               if (hasNumericData) expenseRows.push({ name: firstCell, rowIndex: i });
-           }
+               
+               // Further heuristic: Only add if the row isn't above the first detected date row (likely junk/titles)
+               if (hasNumericData && dateRowIndices.length > 0 && i > dateRowIndices[0]) {
+                   expenseRows.push({ name: firstCell, rowIndex: i });
+               }
+        }
     }
+
+    // Process Income Mapping
     let incomeDateRowIndex = -1;
     if (bestIncomeRowIndex !== -1) {
-        for (let j = dateRowIndices.length - 1; j >= 0; j--) if (dateRowIndices[j] < bestIncomeRowIndex) { incomeDateRowIndex = dateRowIndices[j]; break; }
+        for (let j = dateRowIndices.length - 1; j >= 0; j--) {
+            if (dateRowIndices[j] < bestIncomeRowIndex) { 
+                incomeDateRowIndex = dateRowIndices[j]; 
+                break; 
+            }
+        }
     }
+    
+    // If we didn't find a date row specifically above income, fallback to the first detected date row
+    if (bestIncomeRowIndex !== -1 && incomeDateRowIndex === -1 && dateRowIndices.length > 0) {
+        incomeDateRowIndex = dateRowIndices[0];
+    }
+
     if (bestIncomeRowIndex !== -1 && incomeDateRowIndex !== -1) {
         const dateRow = parsedLines[incomeDateRowIndex];
         const valRow = parsedLines[bestIncomeRowIndex];
@@ -501,6 +524,8 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
             if (iso) incomeEntries.push({ date: iso, monthStr: dateRow[c], amount: val });
         }
     }
+
+    // Process Expenses Mapping
     if (expenseRows.length > 0 && dateRowIndices.length > 0) {
         const dateRow = parsedLines[dateRowIndices[0]];
         for (let c = 1; c < dateRow.length; c++) {
@@ -517,8 +542,12 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
             if (total > 0) expenseEntries.push({ date: iso, monthStr: dateRow[c], categories, total });
         }
     }
+
     const sortByDate = (a: any, b: any) => a.date.localeCompare(b.date);
-    return { income: incomeEntries.sort(sortByDate), expenses: expenseEntries.sort(sortByDate) };
+    return { 
+        income: incomeEntries.sort(sortByDate), 
+        expenses: expenseEntries.sort(sortByDate) 
+    };
 };
 
 export const parseDetailedIncome = (lines: string[]): LedgerData => {
@@ -526,10 +555,10 @@ export const parseDetailedIncome = (lines: string[]): LedgerData => {
     let headerIdx = -1;
     let bestMonthCount = 0;
 
-    for (let i = 0; i < Math.min(lines.length, 10); i++) {
+    for (let i = 0; i < Math.min(lines.length, 15); i++) {
         const row = parseCSVLine(lines[i]);
         let count = 0;
-        for (let j = 1; j <= 12; j++) {
+        for (let j = 1; j < row.length; j++) {
             const val = (row[j] || '').trim().toLowerCase();
             if (val && MONTH_NAMES.some(m => val.startsWith(m))) count++;
         }
@@ -543,7 +572,14 @@ export const parseDetailedIncome = (lines: string[]): LedgerData => {
 
     const headerRow = parseCSVLine(lines[headerIdx]);
     const months: string[] = [];
-    for (let j = 1; j <= 12; j++) months.push(headerRow[j] ? headerRow[j].trim() : `Month ${j}`);
+    const monthColIndices: number[] = [];
+    for (let j = 1; j < headerRow.length; j++) {
+        const val = (headerRow[j] || '').trim();
+        if (parseFlexibleDate(val)) {
+            months.push(val);
+            monthColIndices.push(j);
+        }
+    }
 
     const incomeSourceCategory: LedgerCategory = {
         name: 'Income Sources',
@@ -555,10 +591,7 @@ export const parseDetailedIncome = (lines: string[]): LedgerData => {
     for (let i = headerIdx + 1; i < lines.length; i++) {
         const row = parseCSVLine(lines[i]);
         const name = (row[0] || '').trim();
-        if (!name) {
-            if (incomeSourceCategory.subCategories.length > 0) break;
-            continue; 
-        }
+        if (!name) continue;
         if (!isSafeKey(name)) continue;
         const lowerName = name.toLowerCase();
         if (lowerName === 'total' || lowerName.includes('total income')) break;
@@ -568,12 +601,12 @@ export const parseDetailedIncome = (lines: string[]): LedgerData => {
         let rowTotal = 0;
         let hasData = false;
 
-        for (let j = 1; j <= 12; j++) {
-            const val = parseNumber(row[j]);
+        monthColIndices.forEach(colIdx => {
+            const val = parseNumber(row[colIdx]);
             monthlyValues.push(val);
             rowTotal += val;
             if (val !== 0) hasData = true;
-        }
+        });
 
         if (hasData) {
             incomeSourceCategory.subCategories.push({
@@ -597,9 +630,9 @@ export const parseDetailedExpenses = (lines: string[]): LedgerData => {
     for (let i = 0; i < Math.min(lines.length, 50); i++) {
         const row = parseCSVLine(lines[i]);
         let count = 0;
-        for (let j = 1; j <= 12; j++) {
-            const val = (row[j] || '').trim().toLowerCase();
-            if (val && MONTH_NAMES.some(m => val.startsWith(m))) count++;
+        for (let j = 1; j < row.length; j++) {
+            const val = (row[j] || '').trim();
+            if (parseFlexibleDate(val)) count++;
         }
         const isTitleRow = (row[0] || '').toLowerCase().includes("expense categorie");
         if (count > bestMonthCount) {
@@ -613,7 +646,14 @@ export const parseDetailedExpenses = (lines: string[]): LedgerData => {
     if (headerIdx === -1 || headerIdx >= lines.length - 1) return { months: [], categories: [] };
     const headerRow = parseCSVLine(lines[headerIdx]);
     const months: string[] = [];
-    for (let j = 1; j <= 12; j++) months.push(headerRow[j] ? headerRow[j].trim() : `Month ${j}`);
+    const monthColIndices: number[] = [];
+    for (let j = 1; j < headerRow.length; j++) {
+        const val = (headerRow[j] || '').trim();
+        if (parseFlexibleDate(val)) {
+            months.push(val);
+            monthColIndices.push(j);
+        }
+    }
     
     let currentCategory: LedgerCategory | null = null;
     
@@ -632,12 +672,13 @@ export const parseDetailedExpenses = (lines: string[]): LedgerData => {
         const monthlyValues: number[] = [];
         let hasData = false;
         let totalRowSum = 0;
-        for (let j = 1; j <= 12; j++) {
-            const val = parseNumber(row[j]);
+        
+        monthColIndices.forEach(colIdx => {
+            const val = parseNumber(row[colIdx]);
             monthlyValues.push(val);
             if (val !== 0) hasData = true;
             totalRowSum += val;
-        }
+        });
         
         if (!hasData) {
             if (currentCategory) categories.push(currentCategory);

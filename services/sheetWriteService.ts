@@ -142,8 +142,11 @@ const updateRowInSheet = async (sheetId: string, tabName: string, rowIndex: numb
 /**
  * Resets the yearly ledger:
  * 1. Archives current Income/Expense sheets to Income-YY/Expense-YY
- * 2. Clears data ranges (Income B4:M5, B10:M; Expense B7:M)
- * 3. Increments year in headers at Row 3 (Income) and Row 6 (Expense tab)
+ * 2. On the ARCHIVED Income sheet:
+ *    - Copies TOTAL values (B6:M6) over the first Income row (B4:M4)
+ *    - Clears the details (B5:M6)
+ * 3. Clears data ranges on the ACTIVE sheets (Income B4:M5, B10:M; Expense B7:M)
+ * 4. Increments year in headers at Row 3 (Income) and Row 6 (Expense tab)
  */
 export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string, expenseTab: string) => {
     const token = getAccessToken();
@@ -162,13 +165,25 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
     const nextYearFull = 2000 + parseInt(currentYearShort) + 1;
     const nextYearShort = String(nextYearFull).slice(-2);
 
-    // 2. Archive current sheets using duplicateSheet
+    // 2. Fetch current Income Totals (B6:M6) from ACTIVE sheet before clearing
+    const totalsRange = encodeURIComponent(`${incomeTab}!B6:M6`);
+    const totalsRes = await fetch(`${BASE_URL}/${spreadsheetId}/values/${totalsRange}`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!totalsRes.ok) throw new Error("Failed to capture current income totals.");
+    const totalsData = await totalsRes.json();
+    const incomeTotalsRow = totalsData.values || [new Array(12).fill(0)];
+
+    // 3. Archive current sheets using duplicateSheet
     const incomeGridId = await getSheetGridId(spreadsheetId, incomeTab, token);
     const expenseGridId = await getSheetGridId(spreadsheetId, expenseTab, token);
 
+    const archivedIncomeName = `${incomeTab}-${currentYearShort}`;
+    const archivedExpenseName = `${expenseTab}-${currentYearShort}`;
+
     const archiveRequests = [
-        { duplicateSheet: { sourceSheetId: incomeGridId, newSheetName: `${incomeTab}-${currentYearShort}` } },
-        { duplicateSheet: { sourceSheetId: expenseGridId, newSheetName: `${expenseTab}-${currentYearShort}` } }
+        { duplicateSheet: { sourceSheetId: incomeGridId, newSheetName: archivedIncomeName } },
+        { duplicateSheet: { sourceSheetId: expenseGridId, newSheetName: archivedExpenseName } }
     ];
 
     const archiveRes = await fetch(`${BASE_URL}/${spreadsheetId}:batchUpdate`, {
@@ -178,7 +193,26 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
     });
     if (!archiveRes.ok) throw new Error("Failed to archive sheets.");
 
-    // 3. Reset original sheets: Clear values and Update Headers
+    // 4. Modify the CLONED Income sheet (Archive)
+    // Collapse breakdown: Set B4:M4 to Totals and clear B5:M6
+    const emptyDetailsRow = new Array(12).fill("");
+    const archiveUpdates = [
+        { range: `${archivedIncomeName}!B4:M4`, values: incomeTotalsRow }, // Move totals up
+        { range: `${archivedIncomeName}!B5:M6`, values: [emptyDetailsRow, emptyDetailsRow] }, // Clear details
+        { range: `${archivedIncomeName}!A4`, values: [['TOTAL INCOME']] } // Label it clearly
+    ];
+
+    const archiveModRes = await fetch(`${BASE_URL}/${spreadsheetId}/values:batchUpdate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            valueInputOption: 'USER_ENTERED',
+            data: archiveUpdates
+        })
+    });
+    if (!archiveModRes.ok) throw new Error("Failed to simplify archived Income sheet.");
+
+    // 5. Reset ORIGINAL ACTIVE sheets: Clear values and Update Headers
     const resetMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const newHeaders = resetMonths.map(m => `${m}-${nextYearShort}`);
     
@@ -188,7 +222,7 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
     const emptyLargeData = new Array(clearRowsCount).fill(emptyRow);
     const emptySmallData = new Array(2).fill(emptyRow); // For B4:M5
 
-    const valueUpdates = [
+    const activeUpdates = [
         // Income Tab Updates
         { range: `${incomeTab}!B3:M3`, values: [newHeaders] },      // Update Income header at Row 3
         { range: `${incomeTab}!B4:M5`, values: emptySmallData },    // Clear B4 to M5
@@ -204,11 +238,11 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
             valueInputOption: 'USER_ENTERED',
-            data: valueUpdates
+            data: activeUpdates
         })
     });
 
-    if (!resetRes.ok) throw new Error("Failed to reset values and headers.");
+    if (!resetRes.ok) throw new Error("Failed to reset values and headers on active sheets.");
 
     return true;
 };

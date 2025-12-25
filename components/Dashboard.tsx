@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, memo } from 'react';
 import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, BarChart, Bar, ReferenceLine } from 'recharts';
@@ -14,6 +15,7 @@ interface DashboardProps {
   isLoading?: boolean;
   exchangeRates?: ExchangeRates;
   isDarkMode?: boolean;
+  selectedYear?: number;
 }
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
@@ -97,12 +99,16 @@ const StatsCard = memo(({
     );
 });
 
-const NetWorthChart = memo(({ data, isDarkMode }: { data: NetWorthEntry[], isDarkMode: boolean }) => {
+const NetWorthChart = memo(({ data, isDarkMode, selectedYear }: { data: NetWorthEntry[], isDarkMode: boolean, selectedYear: number }) => {
     const axisColor = isDarkMode ? '#94a3b8' : '#64748b';
     const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
     const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
     const tooltipBorder = isDarkMode ? '#334155' : '#cbd5e1';
     const tooltipText = isDarkMode ? '#f1f5f9' : '#0f172a';
+
+    const filteredData = useMemo(() => {
+        return data.filter(d => d.date.startsWith(String(selectedYear)));
+    }, [data, selectedYear]);
 
     const formatAxisDate = (str: string) => {
         const d = parseISOToLocal(str);
@@ -124,12 +130,12 @@ const NetWorthChart = memo(({ data, isDarkMode }: { data: NetWorthEntry[], isDar
         <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[420px] shadow-sm transition-colors">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
                 <TrendingUp size={20} className="text-emerald-500 dark:text-emerald-400" />
-                Net Worth History
+                Net Worth History ({selectedYear})
             </h3>
             <div className="flex-1 w-full min-h-0">
-                {data.length > 1 ? (
+                {filteredData.length > 1 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <AreaChart data={filteredData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                             <defs>
                                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
@@ -179,7 +185,7 @@ const NetWorthChart = memo(({ data, isDarkMode }: { data: NetWorthEntry[], isDar
                 ) : (
                     <div className="h-full flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-xl bg-slate-50 dark:bg-slate-800/20">
                         <TrendingUp className="opacity-20 mb-3" size={48} />
-                        <p className="font-medium">Insufficient historical data.</p>
+                        <p className="font-medium">Insufficient historical data for {selectedYear}.</p>
                         <p className="text-xs mt-1 text-slate-600">Sync 'Net Worth Log' tab to view trends.</p>
                     </div>
                 )}
@@ -366,7 +372,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     expenseData = [], 
     isLoading = false, 
     exchangeRates,
-    isDarkMode = true
+    isDarkMode = true,
+    selectedYear = new Date().getFullYear()
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
@@ -402,19 +409,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // --- Percentage Change Calculation ---
   const netWorthChange = useMemo(() => {
     if (netWorthHistory.length < 1) return null;
-    const sorted = [...netWorthHistory].sort((a, b) => b.date.localeCompare(a.date));
+    const sorted = [...netWorthHistory]
+        .filter(d => d.date.startsWith(String(selectedYear)))
+        .sort((a, b) => b.date.localeCompare(a.date));
+    
+    if (sorted.length === 0) return null;
     const latestLoggedValue = sorted[0].value;
     if (latestLoggedValue === 0) return null;
     
-    // Compare current calculated net worth with latest historical entry
+    // Compare current calculated net worth with latest historical entry for the selected year
     return ((netWorth - latestLoggedValue) / latestLoggedValue) * 100;
-  }, [netWorth, netWorthHistory]);
+  }, [netWorth, netWorthHistory, selectedYear]);
 
   // --- Net Income Data ---
   const netIncomeData = useMemo(() => {
       const map = new Map<string, { date: string, monthStr: string, income: number, expense: number }>();
 
       const merge = (date: string, monthStr: string, inc: number, exp: number) => {
+          if (!date.startsWith(String(selectedYear))) return;
           const key = date.substring(0, 7); 
           const prev = map.get(key) || { date, monthStr, income: 0, expense: 0 };
           map.set(key, { ...prev, income: prev.income + inc, expense: prev.expense + exp });
@@ -427,7 +439,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           .sort((a, b) => a.date.localeCompare(b.date))
           .map(d => ({ ...d, net: d.income - d.expense }))
           .slice(-12);
-  }, [incomeData, expenseData]);
+  }, [incomeData, expenseData, selectedYear]);
 
 
   const selectedAssets = useMemo(() => {
@@ -450,20 +462,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
             )}
         </h2>
-        <p className="text-slate-500 dark:text-slate-400">Welcome back. Financial overview in {PRIMARY_CURRENCY}.</p>
+        <p className="text-slate-500 dark:text-slate-400">Overview for {selectedYear} in {PRIMARY_CURRENCY}.</p>
       </header>
 
       <div className={`transition-all duration-500 space-y-6 ${isLoading ? 'opacity-60 grayscale-[0.3] pointer-events-none' : 'opacity-100'}`}>
         
         {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <StatsCard title="Total Net Worth" value={netWorth} icon={DollarSign} color="blue" isLoading={isLoading} change={netWorthChange} />
+            <StatsCard title="Current Net Worth" value={netWorth} icon={DollarSign} color="blue" isLoading={isLoading} change={netWorthChange} />
             <StatsCard title="Investments Holdings" value={totalInvestments} icon={ArrowUpRight} color="emerald" isLoading={isLoading} />
             <StatsCard title="Liquid Cash" value={totalCash} icon={Wallet} color="purple" isLoading={isLoading} />
         </div>
 
         {/* Top Row: Net Worth (Wide) */}
-        <NetWorthChart data={chartData} isDarkMode={isDarkMode} />
+        <NetWorthChart data={chartData} isDarkMode={isDarkMode} selectedYear={selectedYear} />
 
         {/* Middle Row: Net Income & Allocation */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -11,6 +11,7 @@ interface IncomeAnalysisProps {
   detailedExpenses?: LedgerData;
   isLoading?: boolean;
   isDarkMode?: boolean;
+  selectedYear?: number;
 }
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f97316'];
@@ -131,14 +132,19 @@ const EmptyState = ({ msg = "No data available." }) => (
     </div>
 );
 
-export const IncomeAnalysis: React.FC<IncomeAnalysisProps> = ({ incomeData, expenseData, detailedExpenses, isLoading = false, isDarkMode = true }) => {
+export const IncomeAnalysis: React.FC<IncomeAnalysisProps> = ({ 
+    incomeData, 
+    expenseData, 
+    detailedExpenses, 
+    isLoading = false, 
+    isDarkMode = true,
+    selectedYear = new Date().getFullYear()
+}) => {
   const [expenseFilter, setExpenseFilter] = useState<string>('All');
   const [selectedMonthIndex, setSelectedMonthIndex] = useState<number>(0);
   const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null);
 
-  const currentYear = new Date().getFullYear();
   const todayISO = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-
   const monthsList = detailedExpenses?.months || [];
 
   const expenseCategoryKeys = useMemo(() => {
@@ -150,10 +156,13 @@ export const IncomeAnalysis: React.FC<IncomeAnalysisProps> = ({ incomeData, expe
   const incomeStats = useMemo(() => {
     let total = 0, ytd = 0, count = 0;
     for (const entry of incomeData) {
+        if (!entry.date.startsWith(String(selectedYear))) continue;
         const amt = entry.amount || 0;
         total += amt;
         if (amt > 0) count++;
-        if (entry.date.startsWith(String(currentYear)) && entry.date <= todayISO) {
+        // If current year, only count up to today. If historical year, count full year.
+        const isCurrentYear = selectedYear === new Date().getFullYear();
+        if (!isCurrentYear || entry.date <= todayISO) {
             ytd += amt;
         }
     }
@@ -162,23 +171,27 @@ export const IncomeAnalysis: React.FC<IncomeAnalysisProps> = ({ incomeData, expe
         ytd: ytd, 
         average: count > 0 ? total / count : 0 
     };
-  }, [incomeData, currentYear, todayISO]);
+  }, [incomeData, selectedYear, todayISO]);
 
   const expenseStats = useMemo(() => {
     let total = 0, ytd = 0, count = 0;
     
-    const chartData = expenseData.map(e => {
-        const flattened: any = { ...e, ...e.categories };
-        let relevantTotal = 0;
-        if (expenseFilter === 'All') relevantTotal = e.total; 
-        else relevantTotal = e.categories[expenseFilter] || 0;
-        
-        total += relevantTotal;
-        if (relevantTotal > 0) count++;
-        if (e.date.startsWith(String(currentYear)) && e.date <= todayISO) ytd += relevantTotal;
-        
-        return flattened;
-    });
+    const chartData = expenseData
+        .filter(e => e.date.startsWith(String(selectedYear)))
+        .map(e => {
+            const flattened: any = { ...e, ...e.categories };
+            let relevantTotal = 0;
+            if (expenseFilter === 'All') relevantTotal = e.total; 
+            else relevantTotal = e.categories[expenseFilter] || 0;
+            
+            total += relevantTotal;
+            if (relevantTotal > 0) count++;
+            
+            const isCurrentYear = selectedYear === new Date().getFullYear();
+            if (!isCurrentYear || e.date <= todayISO) ytd += relevantTotal;
+            
+            return flattened;
+        });
 
     return {
         totalAnnual: total,
@@ -186,7 +199,7 @@ export const IncomeAnalysis: React.FC<IncomeAnalysisProps> = ({ incomeData, expe
         average: count > 0 ? total / count : 0,
         chartData
     };
-  }, [expenseData, currentYear, todayISO, expenseFilter]);
+  }, [expenseData, selectedYear, todayISO, expenseFilter]);
 
   const savingsRate = useMemo(() => {
     if (incomeStats.ytd === 0) return 0;
@@ -288,10 +301,10 @@ export const IncomeAnalysis: React.FC<IncomeAnalysisProps> = ({ incomeData, expe
 
       {/* Main Trends */}
       <section className={`grid grid-cols-1 lg:grid-cols-2 gap-8 transition-opacity duration-500 ${isLoading ? 'opacity-60' : 'opacity-100'}`}>
-        <ChartContainer title="Monthly Income" icon={BadgeDollarSign} iconColor="text-emerald-500 dark:text-emerald-400">
-            {incomeData.length > 0 ? (
+        <ChartContainer title={`Monthly Income (${selectedYear})`} icon={BadgeDollarSign} iconColor="text-emerald-500 dark:text-emerald-400">
+            {incomeData.filter(d => d.date.startsWith(String(selectedYear))).length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={incomeData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <BarChart data={incomeData.filter(d => d.date.startsWith(String(selectedYear)))} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
                         <XAxis dataKey="monthStr" stroke={chartTheme.axis} tick={{fontSize: 11}} axisLine={false} tickLine={false} />
                         <YAxis stroke={chartTheme.axis} tick={{fontSize: 11}} tickFormatter={(val) => `$${val/1000}k`} axisLine={false} tickLine={false} />
@@ -304,7 +317,7 @@ export const IncomeAnalysis: React.FC<IncomeAnalysisProps> = ({ incomeData, expe
         </ChartContainer>
 
         <ChartContainer 
-            title="Expense Overview" 
+            title={`Expense Overview (${selectedYear})`} 
             icon={CreditCard} 
             iconColor="text-orange-500 dark:text-orange-400" 
             subTitle={expenseFilter === 'All' ? "By Payment Type" : `${expenseFilter}`}
@@ -321,7 +334,7 @@ export const IncomeAnalysis: React.FC<IncomeAnalysisProps> = ({ incomeData, expe
                 </select>
             }
         >
-            {expenseData.length > 0 ? (
+            {expenseStats.chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={expenseStats.chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
@@ -402,7 +415,7 @@ export const IncomeAnalysis: React.FC<IncomeAnalysisProps> = ({ incomeData, expe
                                     Click a category node to filter. Click 'Total' or the active node to reset.
                                 </p>
                             </div>
-                        ) : <EmptyState msg={`No spending data for ${monthsList[selectedMonthIndex]}.`} />}
+                        ) : <EmptyState msg={`No spending data for ${monthsList[selectedMonthIndex] || 'selected year'}.`} />}
                   </ChartContainer>
 
                   <ChartContainer title="Category Trends" icon={BarChart2} iconColor="text-pink-500 dark:text-pink-400" subTitle="Annual Distribution">
