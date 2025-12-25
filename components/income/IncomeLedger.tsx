@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { LedgerData } from '../../types';
-import { Loader2, AlertCircle, Check, Save, ChevronLeft, ChevronRight, Calendar, RefreshCw, Lock, FileX } from 'lucide-react';
+import { Loader2, AlertCircle, Check, Save, ChevronLeft, ChevronRight, Calendar, RefreshCw, Lock, FileX, History } from 'lucide-react';
 
 interface IncomeLedgerProps {
   expenseData: LedgerData;
@@ -232,30 +232,14 @@ export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ expenseData, incomeD
     }, [months.length]);
 
     if (!(incomeData?.categories.length > 0 || expenseData?.categories.length > 0)) {
-        if (isReadOnly) {
-            return (
-                <div className="flex flex-col items-center justify-center p-16 text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl bg-slate-50 dark:bg-slate-800/10">
-                    <FileX size={48} className="opacity-20 mb-4" />
-                    <p className="font-bold text-slate-900 dark:text-white">Archive Not Found</p>
-                    <p className="text-sm mt-1 max-w-sm text-center">No data found for {selectedYear} in local storage or your Google Sheet. Did you archive this year using the "Reset for New Year" button?</p>
-                </div>
-            );
-        }
-
-        return (
-            <div className="flex flex-col items-center justify-center p-16 text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl bg-slate-50 dark:bg-slate-800/10">
-                <Calendar size={48} className="opacity-20 mb-4" />
-                <p className="font-medium">No ledger data found.</p>
-                <p className="text-xs mt-1">Connect your sheet or sync data to see your cash flow.</p>
-            </div>
-        );
+        return null; // Parent App.tsx handles the discovery state for empty archives in Phase 4
     }
 
     const nextMonth = () => setFocusedMonthIndex(prev => Math.min(prev + 1, months.length - 1));
     const prevMonth = () => setFocusedMonthIndex(prev => Math.max(prev - 1, 0));
 
     return (
-        <div className="flex flex-col h-[calc(100vh-180px)] md:h-[calc(100vh-220px)]">
+        <div className="flex flex-col h-[calc(100vh-280px)] md:h-[calc(100vh-320px)] animate-fade-in">
             {isMobile && months.length > 0 && (
                 <div className="flex items-center justify-between mb-6 px-1">
                     <button onClick={prevMonth} disabled={focusedMonthIndex === 0} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm disabled:opacity-30"><ChevronLeft size={20} /></button>
@@ -272,13 +256,14 @@ export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ expenseData, incomeD
                 <LedgerTable title="Expense Ledger" data={expenseData} themeColor="rose" isReadOnly={isReadOnly} onUpdate={onUpdateExpense} visibleMonthIndex={isMobile ? focusedMonthIndex : null} />
             </div>
             
-            <div className="mt-auto p-4 bg-slate-50 dark:bg-slate-850/80 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] text-slate-500 font-medium">
+            <div className="mt-auto p-4 bg-slate-50 dark:bg-slate-850/80 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] text-slate-500 font-medium shadow-inner">
                 <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
                     {isReadOnly ? (
-                        <span className="flex items-center gap-1.5 text-amber-500 font-bold"><Lock size={12} /> ARCHIVE MODE: READ-ONLY</span>
+                        <span className="flex items-center gap-1.5 text-amber-500 font-black tracking-widest"><Lock size={14} /> CHRONOS MODE ACTIVE</span>
                     ) : (
                         <span className="flex items-center gap-1.5"><Save size={12} className="text-blue-500" /> Auto-saves on Enter / Blur</span>
                     )}
+                    <span className="flex items-center gap-1.5 opacity-50"><History size={12} /> Financial Year {selectedYear}</span>
                 </div>
                 {isLoading && (
                     <span className="flex items-center gap-2 text-blue-500 bg-blue-500/10 px-3 py-1 rounded-full animate-pulse">

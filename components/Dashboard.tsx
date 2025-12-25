@@ -2,7 +2,7 @@
 import React, { useMemo, useState, memo } from 'react';
 import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, BarChart, Bar, ReferenceLine } from 'recharts';
-import { ArrowUpRight, DollarSign, Wallet, X, Loader2, TrendingUp, TrendingDown, Scale, PieChart as PieIcon } from 'lucide-react';
+import { ArrowUpRight, DollarSign, Wallet, X, Loader2, TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Lock } from 'lucide-react';
 import { convertToBase, formatBaseCurrency, formatNativeCurrency, PRIMARY_CURRENCY } from '../services/currencyService';
 import { isSafeKey } from '../services/geminiService';
 import { isInvestmentAsset, isCashAsset } from '../services/classificationService';
@@ -20,25 +20,15 @@ interface DashboardProps {
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
 
-// --- Utilities ---
-
-/**
- * Parses a YYYY-MM-DD string into a local Date object.
- * This avoids the UTC off-by-one error in Western time zones like MST.
- */
 const parseISOToLocal = (isoStr: string): Date => {
     if (!isoStr) return new Date();
     const parts = isoStr.split('-');
     if (parts.length !== 3) return new Date(isoStr);
-    
     const year = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10) - 1; // JS months are 0-indexed
+    const month = parseInt(parts[1], 10) - 1; 
     const day = parseInt(parts[2], 10);
-    
     return new Date(year, month, day);
 };
-
-// --- Sub-Components ---
 
 const StatsCard = memo(({ 
     title, 
@@ -46,14 +36,16 @@ const StatsCard = memo(({
     icon: Icon, 
     color, 
     isLoading, 
-    change 
+    change,
+    isHistorical
 }: { 
     title: string, 
     value: number, 
     icon: any, 
     color: 'blue' | 'emerald' | 'purple', 
     isLoading: boolean,
-    change?: number | null 
+    change?: number | null,
+    isHistorical: boolean
 }) => {
     const styles = {
         blue: { bg: 'bg-blue-500/20', text: 'text-blue-500 dark:text-blue-400', glow: 'bg-blue-500/10', border: 'hover:border-blue-500/30' },
@@ -67,6 +59,7 @@ const StatsCard = memo(({
 
     return (
         <div className={`bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 backdrop-blur-sm relative overflow-hidden group ${s.border} transition-colors shadow-sm`}>
+            {isHistorical && <div className="absolute -top-1 -right-1 opacity-20"><Lock size={48} className="text-slate-400" /></div>}
             <div className={`absolute top-0 right-0 w-32 h-32 ${s.glow} rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity`}></div>
             <div className="flex flex-col space-y-3 relative z-10">
                 <div className="flex items-center justify-between">
@@ -83,14 +76,18 @@ const StatsCard = memo(({
                         <h3 className="text-2xl font-bold text-slate-900 dark:text-white min-h-[2rem] flex items-center">
                             {isLoading ? <div className="h-8 w-32 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse" /> : formatBaseCurrency(value)}
                         </h3>
-                        {change !== undefined && change !== null && !isLoading && (
-                            <div className={`flex items-center gap-1.5 mt-1 text-xs font-bold ${
-                                isPositive ? 'text-emerald-500' : isNegative ? 'text-red-500' : 'text-slate-400'
-                            }`}>
-                                {isPositive ? <TrendingUp size={14} /> : isNegative ? <TrendingDown size={14} /> : null}
-                                <span>{isPositive ? '+' : ''}{change.toFixed(1)}%</span>
-                                <span className="text-slate-400 font-medium ml-1">vs. last log</span>
-                            </div>
+                        {isHistorical ? (
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Snapshot State</p>
+                        ) : (
+                            change !== undefined && change !== null && !isLoading && (
+                                <div className={`flex items-center gap-1.5 mt-1 text-xs font-bold ${
+                                    isPositive ? 'text-emerald-500' : isNegative ? 'text-red-500' : 'text-slate-400'
+                                }`}>
+                                    {isPositive ? <TrendingUp size={14} /> : isNegative ? <TrendingDown size={14} /> : null}
+                                    <span>{isPositive ? '+' : ''}{change.toFixed(1)}%</span>
+                                    <span className="text-slate-400 font-medium ml-1">vs. last log</span>
+                                </div>
+                            )
                         )}
                     </div>
                 </div>
@@ -99,7 +96,7 @@ const StatsCard = memo(({
     );
 });
 
-const NetWorthChart = memo(({ data, isDarkMode, selectedYear }: { data: NetWorthEntry[], isDarkMode: boolean, selectedYear: number }) => {
+const NetWorthChart = memo(({ data, isDarkMode, selectedYear, isHistorical }: { data: NetWorthEntry[], isDarkMode: boolean, selectedYear: number, isHistorical: boolean }) => {
     const axisColor = isDarkMode ? '#94a3b8' : '#64748b';
     const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
     const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
@@ -127,19 +124,24 @@ const NetWorthChart = memo(({ data, isDarkMode, selectedYear }: { data: NetWorth
     };
 
     return (
-        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[420px] shadow-sm transition-colors">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[420px] shadow-sm transition-colors relative overflow-hidden">
+            {isHistorical && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] select-none">
+                    <span className="text-[120px] font-black tracking-tighter rotate-[-15deg]">ARCHIVE</span>
+                </div>
+            )}
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2 relative z-10">
                 <TrendingUp size={20} className="text-emerald-500 dark:text-emerald-400" />
                 Net Worth History ({selectedYear})
             </h3>
-            <div className="flex-1 w-full min-h-0">
+            <div className="flex-1 w-full min-h-0 relative z-10">
                 {filteredData.length > 1 ? (
                     <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={filteredData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                             <defs>
                                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                    <stop offset="5%" stopColor={isHistorical ? "#94a3b8" : "#10b981"} stopOpacity={0.3}/>
+                                    <stop offset="95%" stopColor={isHistorical ? "#94a3b8" : "#10b981"} stopOpacity={0}/>
                                 </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
@@ -164,16 +166,16 @@ const NetWorthChart = memo(({ data, isDarkMode, selectedYear }: { data: NetWorth
                             />
                             <Tooltip 
                                 contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.5rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                                itemStyle={{ color: '#10b981', fontWeight: 600 }}
+                                itemStyle={{ color: isHistorical ? '#94a3b8' : '#10b981', fontWeight: 600 }}
                                 labelStyle={{ color: axisColor, marginBottom: '4px', fontSize: '12px' }}
                                 formatter={(value: number) => [formatBaseCurrency(value), "Net Worth"]}
                                 labelFormatter={formatTooltipDate}
-                                cursor={{ stroke: '#10b981', strokeWidth: 1 }}
+                                cursor={{ stroke: isHistorical ? '#94a3b8' : '#10b981', strokeWidth: 1 }}
                             />
                             <Area 
                                 type="monotone" 
                                 dataKey="value" 
-                                stroke="#10b981" 
+                                stroke={isHistorical ? "#94a3b8" : "#10b981"} 
                                 strokeWidth={3}
                                 fillOpacity={1} 
                                 fill="url(#colorValue)" 
@@ -194,7 +196,7 @@ const NetWorthChart = memo(({ data, isDarkMode, selectedYear }: { data: NetWorth
     );
 });
 
-const IncomeChart = memo(({ data, isDarkMode }: { data: any[], isDarkMode: boolean }) => {
+const IncomeChart = memo(({ data, isDarkMode, isHistorical }: { data: any[], isDarkMode: boolean, isHistorical: boolean }) => {
     const axisColor = isDarkMode ? '#94a3b8' : '#64748b';
     const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
     const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
@@ -202,10 +204,10 @@ const IncomeChart = memo(({ data, isDarkMode }: { data: any[], isDarkMode: boole
     const tooltipText = isDarkMode ? '#f1f5f9' : '#0f172a';
 
     return (
-        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 h-[380px] flex flex-col shadow-sm transition-colors">
+        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 h-[380px] flex flex-col shadow-sm transition-colors relative overflow-hidden">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
                 <Scale size={20} className="text-blue-500 dark:text-blue-400" />
-                Net Income Trend
+                Net Income Trend {isHistorical && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500">ARCHIVE</span>}
             </h3>
             <div className="flex-1 w-full min-h-0">
                 {data.length > 0 ? (
@@ -224,7 +226,7 @@ const IncomeChart = memo(({ data, isDarkMode }: { data: any[], isDarkMode: boole
                             <ReferenceLine y={0} stroke="#64748b" />
                             <Bar dataKey="net" maxBarSize={40} radius={[4, 4, 0, 0]} animationDuration={1000}>
                                 {data.map((e, i) => (
-                                    <Cell key={i} fill={e.net >= 0 ? '#10b981' : '#ef4444'} />
+                                    <Cell key={i} fill={e.net >= 0 ? (isHistorical ? '#64748b' : '#10b981') : '#ef4444'} />
                                 ))}
                             </Bar>
                         </BarChart>
@@ -305,7 +307,6 @@ const AllocationChart = memo(({ data, selectedCategory, onSelect, isDarkMode }: 
                     </div>
                 )}
                 
-                {/* Center Text Overlay */}
                 {data.length > 0 && !selectedCategory && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="text-center">
@@ -363,8 +364,6 @@ const DrilldownView = memo(({ category, assets, exchangeRates }: { category: str
     </div>
 ));
 
-// --- Main Component ---
-
 export const Dashboard: React.FC<DashboardProps> = ({ 
     assets, 
     netWorthHistory = [], 
@@ -376,8 +375,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     selectedYear = new Date().getFullYear()
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const isHistorical = selectedYear !== new Date().getFullYear();
 
-  // --- Aggregations ---
   const { netWorth, totalInvestments, totalCash, allocationData } = useMemo(() => {
     let nw = 0, inv = 0, cash = 0;
     const groups: Record<string, number> = {};
@@ -406,7 +405,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     };
   }, [assets, exchangeRates]);
 
-  // --- Percentage Change Calculation ---
   const netWorthChange = useMemo(() => {
     if (netWorthHistory.length < 1) return null;
     const sorted = [...netWorthHistory]
@@ -417,30 +415,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const latestLoggedValue = sorted[0].value;
     if (latestLoggedValue === 0) return null;
     
-    // Compare current calculated net worth with latest historical entry for the selected year
     return ((netWorth - latestLoggedValue) / latestLoggedValue) * 100;
   }, [netWorth, netWorthHistory, selectedYear]);
 
-  // --- Net Income Data ---
   const netIncomeData = useMemo(() => {
       const map = new Map<string, { date: string, monthStr: string, income: number, expense: number }>();
-
       const merge = (date: string, monthStr: string, inc: number, exp: number) => {
           if (!date.startsWith(String(selectedYear))) return;
           const key = date.substring(0, 7); 
           const prev = map.get(key) || { date, monthStr, income: 0, expense: 0 };
           map.set(key, { ...prev, income: prev.income + inc, expense: prev.expense + exp });
       };
-
       incomeData.forEach(d => merge(d.date, d.monthStr, d.amount, 0));
       expenseData.forEach(d => merge(d.date, d.monthStr, 0, d.total));
-
       return Array.from(map.values())
           .sort((a, b) => a.date.localeCompare(b.date))
           .map(d => ({ ...d, net: d.income - d.expense }))
           .slice(-12);
   }, [incomeData, expenseData, selectedYear]);
-
 
   const selectedAssets = useMemo(() => {
       return selectedCategory ? assets.filter(a => (a.type || 'Other') === selectedCategory) : [];
@@ -466,21 +458,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </header>
 
       <div className={`transition-all duration-500 space-y-6 ${isLoading ? 'opacity-60 grayscale-[0.3] pointer-events-none' : 'opacity-100'}`}>
-        
-        {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <StatsCard title="Current Net Worth" value={netWorth} icon={DollarSign} color="blue" isLoading={isLoading} change={netWorthChange} />
-            <StatsCard title="Investments Holdings" value={totalInvestments} icon={ArrowUpRight} color="emerald" isLoading={isLoading} />
-            <StatsCard title="Liquid Cash" value={totalCash} icon={Wallet} color="purple" isLoading={isLoading} />
+            <StatsCard title="Year-End Net Worth" value={netWorth} icon={DollarSign} color="blue" isLoading={isLoading} change={netWorthChange} isHistorical={isHistorical} />
+            <StatsCard title="Total Portfolio" value={totalInvestments} icon={ArrowUpRight} color="emerald" isLoading={isLoading} isHistorical={isHistorical} />
+            <StatsCard title="Total Liquidity" value={totalCash} icon={Wallet} color="purple" isLoading={isLoading} isHistorical={isHistorical} />
         </div>
 
-        {/* Top Row: Net Worth (Wide) */}
-        <NetWorthChart data={chartData} isDarkMode={isDarkMode} selectedYear={selectedYear} />
+        <NetWorthChart data={chartData} isDarkMode={isDarkMode} selectedYear={selectedYear} isHistorical={isHistorical} />
 
-        {/* Middle Row: Net Income & Allocation */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
-                <IncomeChart data={netIncomeData} isDarkMode={isDarkMode} />
+                <IncomeChart data={netIncomeData} isDarkMode={isDarkMode} isHistorical={isHistorical} />
             </div>
             <div className="lg:col-span-1">
                 <AllocationChart 
@@ -492,7 +480,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
         </div>
 
-        {/* Bottom Row: Drilldown Details */}
         {selectedCategory && selectedAssets.length > 0 && (
             <DrilldownView 
                 category={selectedCategory} 

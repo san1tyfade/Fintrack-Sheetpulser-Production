@@ -9,6 +9,8 @@ interface TradesListProps {
   onAddTrade: (trade: Trade) => Promise<void>;
   onEditTrade?: (trade: Trade) => Promise<void>;
   onDeleteTrade?: (trade: Trade) => Promise<void>;
+  // Added isReadOnly to fix TypeScript errors in App.tsx
+  isReadOnly?: boolean;
 }
 
 // --- Sub-Component: AddTradeModal ---
@@ -366,7 +368,15 @@ const TradeGroup = memo(({ ticker, trades, isLoading, onDelete, onEdit }: { tick
 
 // --- Main Component ---
 
-export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = false, onAddTrade, onEditTrade, onDeleteTrade }) => {
+export const TradesList: React.FC<TradesListProps> = ({ 
+    trades, 
+    isLoading = false, 
+    onAddTrade, 
+    onEditTrade, 
+    onDeleteTrade,
+    // Destructured isReadOnly from props
+    isReadOnly = false 
+}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
@@ -404,12 +414,14 @@ export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = fals
                 Trades
                 {isLoading && <Loader2 className="animate-spin text-blue-500 dark:text-blue-400" size={24} />}
               </h2>
-              <button 
-                onClick={() => setIsAddModalOpen(true)}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5"
-              >
-                  <Plus size={16} /> Add Trade
-              </button>
+              {!isReadOnly && (
+                  <button 
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5"
+                  >
+                      <Plus size={16} /> Add Trade
+                  </button>
+              )}
           </div>
           <p className="text-slate-500 dark:text-slate-400 mt-1">Historical transaction log grouped by asset.</p>
         </div>
@@ -465,12 +477,14 @@ export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = fals
                 <History size={48} className="opacity-20 mb-4" />
                 <p className="font-medium">No trade history found.</p>
                 <p className="text-sm mt-1">Import from Sheet or click "Add Trade".</p>
-                <button 
-                    onClick={() => setIsAddModalOpen(true)}
-                    className="mt-4 text-blue-500 hover:text-blue-600 font-bold text-sm"
-                >
-                    + Create First Trade
-                </button>
+                {!isReadOnly && (
+                    <button 
+                        onClick={() => setIsAddModalOpen(true)}
+                        className="mt-4 text-blue-500 hover:text-blue-600 font-bold text-sm"
+                    >
+                        + Create First Trade
+                    </button>
+                )}
             </div>
         )}
 
