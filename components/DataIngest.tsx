@@ -1,10 +1,11 @@
 
-import { AlertCircle, ArrowRight, Check, CheckCircle2, Cloud, DollarSign, Download, ExternalLink, FileSpreadsheet, History, Info, Layers, Loader2, LogOut, Moon, RefreshCw, Scale, Search, Shield, ShieldCheck, Sparkles, Sun, Trash2 } from 'lucide-react';
+import { AlertCircle, ArrowRight, Check, CheckCircle2, Cloud, DollarSign, Download, ExternalLink, FileSpreadsheet, History, Info, Layers, Loader2, LogOut, Moon, RefreshCw, Scale, Search, Shield, ShieldCheck, Sparkles, Sun, Trash2, CalendarDays } from 'lucide-react';
 import React, { memo, useEffect, useState } from 'react';
 import { fetchUserProfile, initGoogleAuth, signIn, copyMasterTemplate } from '../services/authService';
 import { openPicker } from '../services/pickerService';
 import { validateSheetTab } from '../services/sheetService';
 import { SheetConfig, UserProfile, ViewState } from '../types';
+import { resetYearlyLedger } from '../services/sheetWriteService';
 
 const MASTER_TEMPLATE_ID = '12YnkmOuHSeiy5hcmbxc6ZT8e8D6ruo1SEr3LU3yEZDk'; 
 
@@ -63,6 +64,7 @@ const CompactTabInput = memo(({ label, value, onChange, onSync, sheetId, isSynci
 export const DataIngest: React.FC<DataIngestProps> = (props) => {
   const { config, onConfigChange, onSync, isSyncing, syncingTabs, syncStatus, sheetUrl, onSheetUrlChange, isDarkMode, toggleTheme, userProfile, onProfileChange, onSessionChange, onSignOut, onViewChange, onTourStart } = props;
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [onboardingStatus, setOnboardingStatus] = useState<'idle' | 'cloning' | 'syncing' | 'complete' | 'error' | 'manual'>('idle');
 
   const handleSignIn = async () => {
@@ -106,6 +108,22 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
           const result = await openPicker(config.clientId);
           if (result) { onConfigChange({ ...config, sheetId: result.id }); onSheetUrlChange(result.url); }
       } catch (e) { alert("Picker error"); }
+  };
+
+  const handleYearReset = async () => {
+      const confirmed = confirm("WARNING: This will archive your current Income/Expense data and clear the active sheet for the new year. Ensure you have synced all local changes first. Continue?");
+      if (!confirmed) return;
+
+      setIsResetting(true);
+      try {
+          await resetYearlyLedger(config.sheetId, config.tabNames.income, config.tabNames.expenses);
+          alert("Success! Sheets archived and active ledger reset for the new year.");
+          await onSync();
+      } catch (e: any) {
+          alert(`Reset failed: ${e.message}`);
+      } finally {
+          setIsResetting(false);
+      }
   };
 
   if (!config.sheetId) {
@@ -268,6 +286,33 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
             {syncStatus.msg}
           </div>
         )}
+      </div>
+
+      {/* Maintenance Section */}
+      <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/50 rounded-2xl p-6 shadow-sm">
+        <div className="flex items-center gap-3 mb-6">
+            <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-500 dark:text-blue-400 border border-blue-500/20"><CalendarDays size={20} /></div>
+            <div>
+                <h3 className="text-sm font-bold">Annual Maintenance</h3>
+                <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tight">End-of-year operations</p>
+            </div>
+        </div>
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="space-y-1">
+                <h4 className="font-bold text-slate-900 dark:text-white">Start New Financial Year</h4>
+                <p className="text-xs text-slate-500 leading-relaxed max-w-md">
+                    Archives your current Income and Expense sheets as historical records (e.g., "Income-24") and clears the active ledger for the next calendar year.
+                </p>
+            </div>
+            <button 
+                onClick={handleYearReset}
+                disabled={isResetting || isSyncing}
+                className="shrink-0 bg-slate-900 dark:bg-slate-100 dark:text-slate-900 text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+                {isResetting ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                {isResetting ? 'Processing...' : 'Reset for New Year'}
+            </button>
+        </div>
       </div>
     </div>
   );

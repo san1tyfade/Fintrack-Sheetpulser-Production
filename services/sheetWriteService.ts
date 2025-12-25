@@ -80,7 +80,6 @@ const mapTaxRecordToRow = (record: TaxRecord, headers: string[]) => {
 // --- API Helpers ---
 
 const fetchHeaders = async (sheetId: string, tabName: string, token: string) => {
-    // We search Row 1 and Row 2 to find headers more robustly
     const range = encodeURIComponent(`${tabName}!A1:Z2`);
     const headerRes = await fetch(`${BASE_URL}/${sheetId}/values/${range}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -89,7 +88,6 @@ const fetchHeaders = async (sheetId: string, tabName: string, token: string) => 
     if (!headerRes.ok) throw new Error(`Could not find headers in tab '${tabName}'.`);
     const headerJson = await headerRes.json();
     
-    // Heuristic: Select row with most non-empty values as header row
     const rows = headerJson.values || [];
     if (rows.length === 0) throw new Error(`Tab '${tabName}' is empty.`);
     
@@ -136,6 +134,82 @@ const updateRowInSheet = async (sheetId: string, tabName: string, rowIndex: numb
         body: JSON.stringify({ values: [rowValues] })
     });
     if (!res.ok) throw new Error("Failed to update row.");
+    return true;
+};
+
+// --- Yearly Reset Logic ---
+
+/**
+ * Resets the yearly ledger:
+ * 1. Archives current Income/Expense sheets to Income-YY/Expense-YY
+ * 2. Clears data ranges (Income B4:M5, B10:M; Expense B7:M)
+ * 3. Increments year in headers at Row 3 (Income) and Row 6 (Expense tab)
+ */
+export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string, expenseTab: string) => {
+    const token = getAccessToken();
+    if (!token) throw new Error("Authentication required.");
+
+    // 1. Fetch current header to determine current year
+    const incomeRange = encodeURIComponent(`${incomeTab}!B3`);
+    const headerRes = await fetch(`${BASE_URL}/${spreadsheetId}/values/${incomeRange}`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!headerRes.ok) throw new Error("Failed to read year header.");
+    const headerData = await headerRes.json();
+    const currentHeader = headerData.values?.[0]?.[0] || 'Jan-25';
+    const yearMatch = currentHeader.match(/-(\d{2,4})$/);
+    const currentYearShort = yearMatch ? yearMatch[1] : '25';
+    const nextYearFull = 2000 + parseInt(currentYearShort) + 1;
+    const nextYearShort = String(nextYearFull).slice(-2);
+
+    // 2. Archive current sheets using duplicateSheet
+    const incomeGridId = await getSheetGridId(spreadsheetId, incomeTab, token);
+    const expenseGridId = await getSheetGridId(spreadsheetId, expenseTab, token);
+
+    const archiveRequests = [
+        { duplicateSheet: { sourceSheetId: incomeGridId, newSheetName: `${incomeTab}-${currentYearShort}` } },
+        { duplicateSheet: { sourceSheetId: expenseGridId, newSheetName: `${expenseTab}-${currentYearShort}` } }
+    ];
+
+    const archiveRes = await fetch(`${BASE_URL}/${spreadsheetId}:batchUpdate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: archiveRequests })
+    });
+    if (!archiveRes.ok) throw new Error("Failed to archive sheets.");
+
+    // 3. Reset original sheets: Clear values and Update Headers
+    const resetMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const newHeaders = resetMonths.map(m => `${m}-${nextYearShort}`);
+    
+    // Clear data ranges
+    const emptyRow = new Array(12).fill("");
+    const clearRowsCount = 500; 
+    const emptyLargeData = new Array(clearRowsCount).fill(emptyRow);
+    const emptySmallData = new Array(2).fill(emptyRow); // For B4:M5
+
+    const valueUpdates = [
+        // Income Tab Updates
+        { range: `${incomeTab}!B3:M3`, values: [newHeaders] },      // Update Income header at Row 3
+        { range: `${incomeTab}!B4:M5`, values: emptySmallData },    // Clear B4 to M5
+        { range: `${incomeTab}!B10:M${10 + clearRowsCount}`, values: emptyLargeData }, // Clear B10 onwards
+
+        // Detailed Expense Tab Updates
+        { range: `${expenseTab}!B6:M6`, values: [newHeaders] },     // Update Expense Detailed Header
+        { range: `${expenseTab}!B7:M${7 + clearRowsCount}`, values: emptyLargeData }   // Clear B7 onwards
+    ];
+
+    const resetRes = await fetch(`${BASE_URL}/${spreadsheetId}/values:batchUpdate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            valueInputOption: 'USER_ENTERED',
+            data: valueUpdates
+        })
+    });
+
+    if (!resetRes.ok) throw new Error("Failed to reset values and headers.");
+
     return true;
 };
 
@@ -206,23 +280,14 @@ export const deleteRowFromSheet = async (sheetId: string, tabName: string, rowIn
     return true;
 };
 
-// Helper to convert index 0 -> B, 1 -> C, etc. (Since A is Name)
 const getColumnLetter = (index: number) => {
-    // Assuming max 26 columns for now (A-Z).
-    // Month index 0 = Jan = Column B.
-    // So 0 -> B (code 66).
     return String.fromCharCode(66 + index);
 };
 
-/**
- * Updates a cell by searching for the row where Column A matches the specific Category/SubCategory structure.
- * This is used for both Income and Expense ledgers.
- */
 export const updateLedgerValue = async (sheetId: string, tabName: string, category: string, subCategory: string, monthIndex: number, value: number) => {
     const token = getAccessToken();
     if (!token) throw new Error("Authentication required.");
 
-    // 1. Fetch Column A to find the correct row (using the V4 API which respects all rows)
     const colARange = encodeURIComponent(`${tabName}!A:A`);
     const searchRes = await fetch(`${BASE_URL}/${sheetId}/values/${colARange}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -232,22 +297,17 @@ export const updateLedgerValue = async (sheetId: string, tabName: string, catego
     const searchData = await searchRes.json();
     const rows = searchData.values || [];
 
-    // 2. Scan for the specific category block and then the sub-item
     let targetRowIndex = -1;
     let foundCategory = false;
     
-    // Normalize logic similar to parser
     const norm = (s: string) => (s || '').trim().toLowerCase();
 
     for (let i = 0; i < rows.length; i++) {
         const cell = rows[i][0] ? rows[i][0].toString() : '';
         const nCell = norm(cell);
 
-        // Header Detection (Optional, but good for context)
         if (!foundCategory && nCell === norm(category)) {
             foundCategory = true;
-            // If the subCategory IS the category (implicit single-row), check if this is the only one.
-            // But usually the sub-items follow.
         }
 
         if (foundCategory) {
@@ -258,8 +318,6 @@ export const updateLedgerValue = async (sheetId: string, tabName: string, catego
         }
     }
 
-    // Fallback: If we couldn't find the structure (maybe implicit category row), 
-    // just find the first row that matches the subCategory name exactly.
     if (targetRowIndex === -1) {
         targetRowIndex = rows.findIndex((r: any[]) => norm(r[0]) === norm(subCategory));
     }
@@ -268,8 +326,7 @@ export const updateLedgerValue = async (sheetId: string, tabName: string, catego
         throw new Error(`Could not find row for '${subCategory}' in sheet.`);
     }
 
-    // 3. Write to the specific cell
-    const rowNum = targetRowIndex + 1; // 1-based index for A1 notation
+    const rowNum = targetRowIndex + 1; 
     const colLetter = getColumnLetter(monthIndex); 
     const range = encodeURIComponent(`${tabName}!${colLetter}${rowNum}`);
     
