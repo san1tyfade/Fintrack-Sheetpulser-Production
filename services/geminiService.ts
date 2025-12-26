@@ -1,4 +1,3 @@
-
 import { Asset, Investment, Trade, Subscription, BankAccount, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, LedgerData, LedgerCategory, LedgerItem, TaxRecord } from "../types";
 
 // --- Utilities ---
@@ -102,15 +101,27 @@ const parseCSVLine = (line: string): string[] => {
 };
 
 const parseNumber = (val: string | undefined): number => {
-  if (!val) return 0;
+  if (val === undefined || val === null) return 0;
   if (typeof val === 'number') return val;
   
   let clean = String(val).trim();
   if (!clean) return 0;
   
-  if (clean.startsWith('(') && clean.endsWith(')')) clean = '-' + clean.slice(1, -1);
-  clean = clean.replace(/[$,]/g, '');
+  // 1. Handle negative parenthesis format: (1,234.56) -> -1,234.56
+  if (clean.startsWith('(') && clean.endsWith(')')) {
+      clean = '-' + clean.slice(1, -1);
+  }
   
+  // 2. Aggressively strip currency prefixes (CA$, US$), symbols ($, €, £), and thousands separators (,)
+  // We keep the minus sign (-) and the decimal point (.)
+  clean = clean.replace(/[^0-9.-]/g, '');
+  
+  // 3. If we have multiple dots (invalid), just take the first part
+  const parts = clean.split('.');
+  if (parts.length > 2) {
+      clean = parts[0] + '.' + parts[1];
+  }
+
   const num = parseFloat(clean);
   return isNaN(num) ? 0 : num;
 };
@@ -465,15 +476,15 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
         for (let c = 1; c < Math.min(row.length, 14); c++) if (parseFlexibleDate(row[c])) dateCount++;
         if (dateCount >= 2) { 
             dateRowIndices.push(i); 
+            // Do not 'continue' here, as the Date Row might also be the start of the Income data in some views
         }
 
-        // 2. Detect Income Rows (Support both live and archived labels)
-        const isIncomeLabel = lowerFirst === 'total income' || lowerFirst === 'annual snapshot';
-        if (isIncomeLabel) {
+        // 2. Detect Income Rows (Strictly TOTAL INCOME per user request)
+        if (lowerFirst === 'total income') {
              let hasData = false;
              for (let c = 1; c < row.length; c++) if (parseNumber(row[c]) !== 0) { hasData = true; break; }
              if (hasData) {
-                 const priority = lowerFirst === 'total income' ? 100 : 90;
+                 const priority = 100;
                  if (priority > bestIncomePriority) { 
                     bestIncomeRowIndex = i; 
                     bestIncomePriority = priority; 
@@ -483,12 +494,15 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
         }
 
         // 3. Detect Expense Rows
+        // IMPROVED: Exclude anything that looks like an income line to prevent detailed income sources from polluting expense charts
         const isIncomeLine = lowerFirst.includes('income'); 
         const isCommonExclude = ['net income', 'monthly savings', 'balance', 'expense categorie'].some(key => lowerFirst.includes(key));
         
         if (lowerFirst && !isIncomeLine && !isCommonExclude && !lowerFirst.includes('total')) {
                let hasNumericData = false;
                for(let c = 1; c < row.length; c++) if (parseNumber(row[c]) !== 0) { hasNumericData = true; break; }
+               
+               // Further heuristic: Only add if the row isn't above the first detected date row (likely junk/titles)
                if (hasNumericData && dateRowIndices.length > 0 && i > dateRowIndices[0]) {
                    expenseRows.push({ name: firstCell, rowIndex: i });
                }
@@ -506,6 +520,7 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
         }
     }
     
+    // If we didn't find a date row specifically above income, fallback to the first detected date row
     if (bestIncomeRowIndex !== -1 && incomeDateRowIndex === -1 && dateRowIndices.length > 0) {
         incomeDateRowIndex = dateRowIndices[0];
     }
@@ -590,7 +605,7 @@ export const parseDetailedIncome = (lines: string[]): LedgerData => {
         if (!name) continue;
         if (!isSafeKey(name)) continue;
         const lowerName = name.toLowerCase();
-        if (lowerName === 'total' || lowerName.includes('total income') || lowerName === 'annual snapshot') break;
+        if (lowerName === 'total' || lowerName.includes('total income')) break;
         if (lowerName.includes('expense') || lowerName.includes('outgoing')) break;
 
         const monthlyValues: number[] = [];
@@ -623,8 +638,7 @@ export const parseDetailedExpenses = (lines: string[]): LedgerData => {
     let headerIdx = -1;
     let bestMonthCount = 0;
     
-    // Scan deeper for expenses in archives
-    for (let i = 0; i < Math.min(lines.length, 60); i++) {
+    for (let i = 0; i < Math.min(lines.length, 50); i++) {
         const row = parseCSVLine(lines[i]);
         let count = 0;
         for (let j = 1; j < row.length; j++) {

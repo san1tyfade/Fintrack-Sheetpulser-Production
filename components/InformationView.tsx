@@ -20,8 +20,6 @@ interface InformationViewProps {
   onAddTaxRecord?: (rec: TaxRecord) => Promise<void>;
   onEditTaxRecord?: (rec: TaxRecord) => Promise<void>;
   onDeleteTaxRecord?: (rec: TaxRecord) => Promise<void>;
-  // Added isReadOnly to fix TypeScript errors in App.tsx
-  isReadOnly?: boolean;
 }
 
 // --- Helper for Debt precision ---
@@ -210,9 +208,7 @@ export const InformationView: React.FC<InformationViewProps> = ({
     subscriptions, accounts, debtEntries = [], taxRecords = [], isLoading = false,
     onAddSubscription, onEditSubscription, onDeleteSubscription,
     onAddAccount, onEditAccount, onDeleteAccount,
-    onAddTaxRecord, onEditTaxRecord, onDeleteTaxRecord,
-    // Destructured isReadOnly from props
-    isReadOnly = false
+    onAddTaxRecord, onEditTaxRecord, onDeleteTaxRecord
 }) => {
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
   const [isAddingSub, setIsAddingSub] = useState(false);
@@ -341,7 +337,7 @@ export const InformationView: React.FC<InformationViewProps> = ({
                   <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2">
                       <CreditCard size={20} className="text-purple-500" /> Recurring Subscriptions
                   </h3>
-                  {onAddSubscription && !isReadOnly && <button onClick={() => setIsAddingSub(true)} className="p-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors shadow-lg shadow-purple-500/20"><Plus size={18} /></button>}
+                  {onAddSubscription && <button onClick={() => setIsAddingSub(true)} className="p-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors shadow-lg shadow-purple-500/20"><Plus size={18} /></button>}
               </div>
               <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
                 <table className="w-full text-left">
@@ -364,8 +360,8 @@ export const InformationView: React.FC<InformationViewProps> = ({
                                 <td className="p-4 text-right font-medium text-slate-900 dark:text-white">{formatBaseCurrency(sub.cost)}</td>
                                 <td className="p-4 text-right">
                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {!isReadOnly && <button onClick={() => setEditingSub(sub)} className="p-1.5 text-slate-400 hover:text-blue-500"><Pencil size={14} /></button>}
-                                        {!isReadOnly && <button onClick={() => handleDeleteSub(sub)} disabled={deletingId === sub.id} className="p-1.5 text-slate-400 hover:text-red-500">{deletingId === sub.id ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>}
+                                        <button onClick={() => setEditingSub(sub)} className="p-1.5 text-slate-400 hover:text-blue-500"><Pencil size={14} /></button>
+                                        <button onClick={() => handleDeleteSub(sub)} disabled={deletingId === sub.id} className="p-1.5 text-slate-400 hover:text-red-500">{deletingId === sub.id ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>
                                     </div>
                                 </td>
                             </tr>
@@ -381,7 +377,7 @@ export const InformationView: React.FC<InformationViewProps> = ({
                   <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2">
                       <Landmark size={20} className="text-emerald-500" /> Banking Accounts
                   </h3>
-                  {onAddAccount && !isReadOnly && <button onClick={() => setIsAddingAcc(true)} className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20"><Plus size={18} /></button>}
+                  {onAddAccount && <button onClick={() => setIsAddingAcc(true)} className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20"><Plus size={18} /></button>}
               </div>
               <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
                 <table className="w-full text-left">
@@ -406,8 +402,8 @@ export const InformationView: React.FC<InformationViewProps> = ({
                                 </td>
                                 <td className="p-4 text-right">
                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {!isReadOnly && <button onClick={() => setEditingAcc(acc)} className="p-1.5 text-slate-400 hover:text-blue-500"><Pencil size={14} /></button>}
-                                        {!isReadOnly && <button onClick={() => handleDeleteAcc(acc)} disabled={deletingId === acc.id} className="p-1.5 text-slate-400 hover:text-red-500">{deletingId === acc.id ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>}
+                                        <button onClick={() => setEditingAcc(acc)} className="p-1.5 text-slate-400 hover:text-blue-500"><Pencil size={14} /></button>
+                                        <button onClick={() => handleDeleteAcc(acc)} disabled={deletingId === acc.id} className="p-1.5 text-slate-400 hover:text-red-500">{deletingId === acc.id ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>
                                     </div>
                                 </td>
                             </tr>

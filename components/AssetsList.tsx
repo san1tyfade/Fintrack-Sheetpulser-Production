@@ -12,8 +12,6 @@ interface AssetsListProps {
   onAddAsset?: (asset: Asset) => Promise<void>;
   onEditAsset?: (asset: Asset) => Promise<void>;
   onDeleteAsset?: (asset: Asset) => Promise<void>;
-  // Added isReadOnly to fix TypeScript errors in App.tsx
-  isReadOnly?: boolean;
 }
 
 // --- Sub-Component: AddAssetModal ---
@@ -277,16 +275,7 @@ const AssetCard = memo(({ asset, exchangeRates, isLoading, onDelete, onEdit }: {
 
 // --- Main Component ---
 
-export const AssetsList: React.FC<AssetsListProps> = ({ 
-    assets, 
-    isLoading = false, 
-    exchangeRates, 
-    onAddAsset, 
-    onEditAsset, 
-    onDeleteAsset,
-    // Destructured isReadOnly from props
-    isReadOnly = false 
-}) => {
+export const AssetsList: React.FC<AssetsListProps> = ({ assets, isLoading = false, exchangeRates, onAddAsset, onEditAsset, onDeleteAsset }) => {
   const [filterType, setFilterType] = useState<string>('All');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
@@ -351,7 +340,7 @@ export const AssetsList: React.FC<AssetsListProps> = ({
                 Assets
                 {isLoading && <Loader2 className="animate-spin text-blue-500 dark:text-blue-400" size={24} />}
               </h2>
-              {onAddAsset && !isReadOnly && (
+              {onAddAsset && (
                   <button 
                     onClick={() => setIsAddModalOpen(true)}
                     className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5"
