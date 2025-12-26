@@ -11,7 +11,7 @@ import { DataIngest } from './components/DataIngest';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { TermsOfService } from './components/TermsOfService';
 import { GuidedTour } from './components/GuidedTour';
-import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile, TourStep, TaxRecord, ArchiveMeta } from './types';
+import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile, TourStep, TaxRecord } from './types';
 import { fetchSheetData } from './services/sheetService';
 import { parseRawData } from './services/geminiService';
 import { fetchLiveRates } from './services/currencyService';
@@ -86,7 +86,7 @@ function App() {
   const [detailedIncome, setDetailedIncome] = useIndexedDB<LedgerData>(`fintrack_detailed_income_${selectedYear}`, { months: [], categories: [] });
 
   const [lastUpdatedStr, setLastUpdatedStr] = useIndexedDB<string | null>('fintrack_lastUpdated', null);
-  const [hasCompletedTour, setHasCompletedTour] = useIndexedDB<boolean>('fintrack_tour_completed', false);
+  const [, setHasCompletedTour] = useIndexedDB<boolean>('fintrack_tour_completed', false);
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncingTabs, setSyncingTabs] = useState<Set<string>>(new Set());
@@ -111,7 +111,7 @@ function App() {
       setAvailableArchives(archives.map(a => a.year));
     };
     initData();
-  }, [isSyncing]); // Refresh archives after sync
+  }, [isSyncing]);
 
   useEffect(() => {
     if (!configLoaded || !sessionLoaded) return;
@@ -201,9 +201,31 @@ function App() {
     setter(prev => prev.map(i => i.id === item.id ? item : i));
   }, [sheetConfig, selectedYear, currentYearNum]);
 
-  const handleSignOut = useCallback(() => { signOut(); setUserProfile(null); setAuthSession(null); setCurrentView(ViewState.SETTINGS); }, [setUserProfile, setAuthSession]);
+  const handleSignOut = useCallback(async () => {
+    await signOut();
+    
+    // Reset all local states to defaults
+    setUserProfile(null);
+    setAuthSession(null);
+    setSheetConfig(DEFAULT_CONFIG);
+    setSheetUrl('');
+    setAssets([]);
+    setInvestments([]);
+    setTrades([]);
+    setSubscriptions([]);
+    setAccounts([]);
+    setDebtEntries([]);
+    setTaxRecords([]);
+    setNetWorthHistory([]);
+    setLastUpdatedStr(null);
+    setDetailedExpenses({ months: [], categories: [] });
+    setDetailedIncome({ months: [], categories: [] });
+    setIncomeData([]);
+    setExpenseData([]);
+    
+    setCurrentView(ViewState.SETTINGS);
+  }, [setUserProfile, setAuthSession, setSheetConfig, setSheetUrl, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setDebtEntries, setTaxRecords, setNetWorthHistory, setLastUpdatedStr, setDetailedExpenses, setDetailedIncome, setIncomeData, setExpenseData]);
 
-  // Combine current year with discovered local archives for the selector
   const timeMachineYears = useMemo(() => {
     const years = new Set([currentYearNum, ...availableArchives]);
     return Array.from(years).sort((a,b) => b - a);
@@ -214,11 +236,10 @@ function App() {
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen font-sans">
-      <Navigation currentView={currentView} setView={setCurrentView} onSync={() => syncData()} isSyncing={isSyncing} lastUpdated={lastUpdated} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
+      <Navigation currentView={currentView} setView={setCurrentView} onSync={() => syncData()} isSyncing={isSyncing} lastUpdated={lastUpdated} />
       <main className="flex-1 overflow-y-auto h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
         <div className="max-w-7xl mx-auto p-6 md:p-12 mb-20 md:mb-0">
           
-          {/* Year Context Control (Time Machine) */}
           {(currentView === ViewState.DASHBOARD || currentView === ViewState.INCOME) && (
               <div className="flex justify-end mb-4">
                   <div className="flex items-center gap-3 bg-white dark:bg-slate-800 p-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">

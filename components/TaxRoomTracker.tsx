@@ -17,7 +17,6 @@ interface AccountStat {
     used: number;
     remaining: number;
     totalLimit: number;
-    withdrawalsThisYear: number;
 }
 
 // --- Modals ---
@@ -238,7 +237,6 @@ export const TaxRoomTracker: React.FC<TaxRoomTrackerProps> = ({ taxRecords, isLo
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
     const stats = useMemo<Record<string, AccountStat>>(() => {
-        const currentYear = new Date().getFullYear();
         const accounts = ['TFSA', 'FHSA', 'RRSP', 'PENSION'];
         const results: Record<string, AccountStat> = {};
 
@@ -246,37 +244,31 @@ export const TaxRoomTracker: React.FC<TaxRoomTrackerProps> = ({ taxRecords, isLo
             const records = taxRecords.filter(r => {
                 const rType = r.recordType.toUpperCase();
                 if (acc === 'PENSION') return rType.includes('LAPP') || rType.includes('PENSION');
+                if (acc === 'RRSP') return rType === 'RRSP' || rType === 'RSP';
                 return rType === acc;
             });
             
             let totalLimit = 0;
             let totalUsed = 0;
-            let withdrawalsThisYear = 0;
 
             records.forEach(r => {
                 const type = (r.transactionType || '').trim().toUpperCase();
                 const desc = (r.description || '').toUpperCase();
                 const val = r.value || 0;
-                const year = new Date(r.date).getFullYear();
 
                 const isLimit = type.includes('LIMIT') || type.includes('INCREASE') || desc.includes('LIMIT') || desc.includes('INCREASE');
-                const isWithdrawal = type.includes('WITHDRAW');
 
                 if (isLimit) {
                     totalLimit += Math.abs(val);
                 } else {
                     totalUsed += val;
-                    if (isWithdrawal && year === currentYear) {
-                        withdrawalsThisYear += Math.abs(val);
-                    }
                 }
             });
 
             results[acc] = {
                 used: totalUsed,
                 remaining: Math.max(0, totalLimit - totalUsed),
-                totalLimit,
-                withdrawalsThisYear
+                totalLimit
             };
         });
 
@@ -287,6 +279,7 @@ export const TaxRoomTracker: React.FC<TaxRoomTrackerProps> = ({ taxRecords, isLo
         return taxRecords.filter(r => {
             const rType = r.recordType.toUpperCase();
             if (activeTab === 'PENSION') return rType.includes('LAPP') || rType.includes('PENSION');
+            if (activeTab === 'RRSP') return rType === 'RRSP' || rType === 'RSP';
             return rType === activeTab;
         }).sort((a, b) => b.date.localeCompare(a.date));
     }, [taxRecords, activeTab]);
@@ -358,7 +351,7 @@ export const TaxRoomTracker: React.FC<TaxRoomTrackerProps> = ({ taxRecords, isLo
 
             {/* Ledger Detail Table */}
             <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm dark:shadow-xl">
-                <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/20">
+                <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/20">
                     <div className="flex items-center gap-3">
                         <History size={20} className="text-slate-400 dark:text-slate-500" />
                         <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">

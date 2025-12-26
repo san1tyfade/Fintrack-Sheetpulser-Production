@@ -1,3 +1,4 @@
+
 import { Asset, Investment, Trade, Subscription, BankAccount, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, LedgerData, LedgerCategory, LedgerItem, TaxRecord } from "../types";
 
 // --- Utilities ---
@@ -101,27 +102,15 @@ const parseCSVLine = (line: string): string[] => {
 };
 
 const parseNumber = (val: string | undefined): number => {
-  if (val === undefined || val === null) return 0;
+  if (!val) return 0;
   if (typeof val === 'number') return val;
   
   let clean = String(val).trim();
   if (!clean) return 0;
   
-  // 1. Handle negative parenthesis format: (1,234.56) -> -1,234.56
-  if (clean.startsWith('(') && clean.endsWith(')')) {
-      clean = '-' + clean.slice(1, -1);
-  }
+  if (clean.startsWith('(') && clean.endsWith(')')) clean = '-' + clean.slice(1, -1);
+  clean = clean.replace(/[$,]/g, '');
   
-  // 2. Aggressively strip currency prefixes (CA$, US$), symbols ($, €, £), and thousands separators (,)
-  // We keep the minus sign (-) and the decimal point (.)
-  clean = clean.replace(/[^0-9.-]/g, '');
-  
-  // 3. If we have multiple dots (invalid), just take the first part
-  const parts = clean.split('.');
-  if (parts.length > 2) {
-      clean = parts[0] + '.' + parts[1];
-  }
-
   const num = parseFloat(clean);
   return isNaN(num) ? 0 : num;
 };
