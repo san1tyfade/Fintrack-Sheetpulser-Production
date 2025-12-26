@@ -118,7 +118,6 @@ function App() {
 
   /**
    * Scans Google Spreadsheet for tabs matching Archive convention (e.g. Income-24)
-   * Corrected regex to handle hyphenated strings without mandatory spaces.
    */
   const scanForRemoteArchives = useCallback(async () => {
       if (!sheetConfig.sheetId) return;
@@ -127,7 +126,6 @@ function App() {
           const foundYears = new Set<number>();
           
           tabNames.forEach(name => {
-              // Match patterns like Income-24, expense-24, Income - 2024, etc.
               const match = name.match(/[ -](\d{2,4})$/);
               if (match) {
                   const yearPart = match[1].trim();
@@ -135,8 +133,6 @@ function App() {
                   if (!isNaN(year)) foundYears.add(year);
               }
           });
-
-          // Extract all detected years from the spreadsheet
           setRemoteArchives(Array.from(foundYears));
       } catch (e) {
           console.warn("Failed to scan for remote archives:", e);
@@ -147,7 +143,6 @@ function App() {
     const initData = async () => {
       setExchangeRates(await fetchLiveRates());
       await refreshArchiveMeta();
-      // Only scan if we have a sheet connected
       if (sheetConfig.sheetId && authSession) {
           scanForRemoteArchives();
       }
@@ -225,7 +220,6 @@ function App() {
         setSyncStatus(missingArchives ? { type: 'warning', msg: `Sheet archive for ${targetYear} not found.` } : { type: 'success', msg: 'Sync complete' });
         setDiscoveryAttempted(prev => ({ ...prev, [targetYear]: true }));
         if (!missingArchives) refreshArchiveMeta();
-        // After a full sync, refresh the remote archive list as it might have changed
         if (!specificTabs) scanForRemoteArchives();
     } catch (e: any) { setSyncStatus({ type: 'error', msg: e.message || "Sync failed." }); }
     finally { setIsSyncing(false); }
@@ -271,6 +265,9 @@ function App() {
   const calculatedInvestments = useMemo(() => reconcileInvestments(investments, trades), [investments, trades]);
 
   const isHistorical = selectedYear !== activeYear;
+  
+  // Banner only appears on views that are year-contextual (Dashboard and Income)
+  const showChronosBanner = isHistorical && [ViewState.DASHBOARD, ViewState.INCOME].includes(currentView);
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen font-sans">
@@ -278,8 +275,8 @@ function App() {
       <main className="flex-1 overflow-y-auto h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
         <div className="max-w-7xl mx-auto p-6 md:p-12 mb-20 md:mb-0 relative">
           
-          {/* Phase 4: Chronos Mode Banner */}
-          {isHistorical && (currentView !== ViewState.SETTINGS) && (
+          {/* Phase 4: Chronos Mode Banner - Visibility refined */}
+          {showChronosBanner && (
               <div className="flex items-center justify-between mb-8 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl animate-in slide-in-from-top duration-500">
                   <div className="flex items-center gap-3">
                       <div className="p-2 bg-amber-500 text-white rounded-xl shadow-lg shadow-amber-500/20"><Lock size={18} /></div>
@@ -328,7 +325,7 @@ function App() {
           )}
 
           {/* Phase 4: Discovery State (Loading vs Error vs Ready) */}
-          {isHistorical && incomeData.length === 0 && (
+          {isHistorical && (currentView === ViewState.DASHBOARD || currentView === ViewState.INCOME) && incomeData.length === 0 && (
                <div className="bg-white dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl p-16 flex flex-col items-center justify-center text-center space-y-6 animate-fade-in">
                    {isSyncing ? (
                         <div className="flex flex-col items-center gap-4">
@@ -365,13 +362,13 @@ function App() {
                </div>
           )}
 
-          <div className={`${isHistorical && incomeData.length === 0 ? 'hidden' : ''}`}>
+          <div className={`${isHistorical && (currentView === ViewState.DASHBOARD || currentView === ViewState.INCOME) && incomeData.length === 0 ? 'hidden' : ''}`}>
               {currentView === ViewState.DASHBOARD && <Dashboard assets={assets} netWorthHistory={netWorthHistory} incomeData={incomeData} expenseData={expenseData} isLoading={isSyncing} exchangeRates={exchangeRates} isDarkMode={isDarkMode} selectedYear={selectedYear} />}
-              {currentView === ViewState.ASSETS && <AssetsList assets={assets} isLoading={isSyncing} exchangeRates={exchangeRates} onAddAsset={isHistorical ? undefined : a => addAssetToSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, a).then(() => syncData(['assets']))} onEditAsset={isHistorical ? undefined : a => handleEditGeneric(a, sheetConfig.tabNames.assets, updateAssetInSheet, setAssets)} onDeleteAsset={isHistorical ? undefined : a => handleDeleteGeneric(a, sheetConfig.tabNames.assets, setAssets)} isReadOnly={isHistorical} />}
+              {currentView === ViewState.ASSETS && <AssetsList assets={assets} isLoading={isSyncing} exchangeRates={exchangeRates} onAddAsset={a => addAssetToSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, a).then(() => syncData(['assets']))} onEditAsset={a => handleEditGeneric(a, sheetConfig.tabNames.assets, updateAssetInSheet, setAssets)} onDeleteAsset={a => handleDeleteGeneric(a, sheetConfig.tabNames.assets, setAssets)} isReadOnly={false} />}
               {currentView === ViewState.INVESTMENTS && <InvestmentsList investments={calculatedInvestments} assets={assets} trades={trades} isLoading={isSyncing} exchangeRates={exchangeRates} />}
-              {currentView === ViewState.TRADES && <TradesList trades={trades} isLoading={isSyncing} onAddTrade={isHistorical ? (async () => {}) : t => addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, t).then(() => syncData(['trades']))} onEditTrade={isHistorical ? undefined : t => handleEditGeneric(t, sheetConfig.tabNames.trades, updateTradeInSheet, setTrades)} onDeleteTrade={isHistorical ? undefined : t => handleDeleteGeneric(t, sheetConfig.tabNames.trades, setTrades)} isReadOnly={isHistorical} />}
+              {currentView === ViewState.TRADES && <TradesList trades={trades} isLoading={isSyncing} onAddTrade={t => addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, t).then(() => syncData(['trades']))} onEditTrade={t => handleEditGeneric(t, sheetConfig.tabNames.trades, updateTradeInSheet, setTrades)} onDeleteTrade={t => handleDeleteGeneric(t, sheetConfig.tabNames.trades, setTrades)} isReadOnly={false} />}
               {currentView === ViewState.INCOME && <IncomeView incomeData={incomeData} expenseData={expenseData} detailedExpenses={detailedExpenses} detailedIncome={detailedIncome} isLoading={isSyncing} isDarkMode={isDarkMode} isReadOnly={isHistorical} selectedYear={selectedYear} onUpdateExpense={async (cat, sub, m, v) => { await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.expenses, cat, sub, m, v); syncData(['expenses']); }} onUpdateIncome={async (cat, sub, m, v) => { await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.income, cat, sub, m, v); syncData(['income']); }} />}
-              {currentView === ViewState.INFORMATION && <InformationView subscriptions={subscriptions} accounts={accounts} debtEntries={debtEntries} taxRecords={taxRecords} isLoading={isSyncing} onAddSubscription={isHistorical ? undefined : s => addSubscriptionToSheet(sheetConfig.sheetId, sheetConfig.tabNames.subscriptions, s).then(() => syncData(['subscriptions']))} onEditSubscription={isHistorical ? undefined : s => handleEditGeneric(s, sheetConfig.tabNames.subscriptions, updateSubscriptionInSheet, setSubscriptions)} onDeleteSubscription={isHistorical ? undefined : s => handleDeleteGeneric(s, sheetConfig.tabNames.subscriptions, setSubscriptions)} onAddAccount={isHistorical ? undefined : a => addAccountToSheet(sheetConfig.sheetId, sheetConfig.tabNames.accounts, a).then(() => syncData(['accounts']))} onEditAccount={isHistorical ? undefined : a => handleEditGeneric(a, sheetConfig.tabNames.accounts, updateAccountInSheet, setAccounts)} onDeleteAccount={isHistorical ? undefined : a => handleDeleteGeneric(a, sheetConfig.tabNames.accounts, setAccounts)} onAddTaxRecord={isHistorical ? undefined : r => addTaxRecordToSheet(sheetConfig.sheetId, sheetConfig.tabNames.taxAccounts, r).then(() => syncData(['taxAccounts']))} onEditTaxRecord={isHistorical ? undefined : r => handleEditGeneric(r, sheetConfig.tabNames.taxAccounts, updateTaxRecordInSheet, setTaxRecords)} onDeleteTaxRecord={isHistorical ? undefined : r => handleDeleteGeneric(r, sheetConfig.tabNames.taxAccounts, setTaxRecords)} isReadOnly={isHistorical} />}
+              {currentView === ViewState.INFORMATION && <InformationView subscriptions={subscriptions} accounts={accounts} debtEntries={debtEntries} taxRecords={taxRecords} isLoading={isSyncing} onAddSubscription={s => addSubscriptionToSheet(sheetConfig.sheetId, sheetConfig.tabNames.subscriptions, s).then(() => syncData(['subscriptions']))} onEditSubscription={s => handleEditGeneric(s, sheetConfig.tabNames.subscriptions, updateSubscriptionInSheet, setSubscriptions)} onDeleteSubscription={s => handleDeleteGeneric(s, sheetConfig.tabNames.subscriptions, setSubscriptions)} onAddAccount={a => addAccountToSheet(sheetConfig.sheetId, sheetConfig.tabNames.accounts, a).then(() => syncData(['accounts']))} onEditAccount={a => handleEditGeneric(a, sheetConfig.tabNames.accounts, updateAccountInSheet, setAccounts)} onDeleteAccount={a => handleDeleteGeneric(a, sheetConfig.tabNames.accounts, setAccounts)} onAddTaxRecord={r => addTaxRecordToSheet(sheetConfig.sheetId, sheetConfig.tabNames.taxAccounts, r).then(() => syncData(['taxAccounts']))} onEditTaxRecord={r => handleEditGeneric(r, sheetConfig.tabNames.taxAccounts, updateTaxRecordInSheet, setTaxRecords)} onDeleteTaxRecord={r => handleDeleteGeneric(r, sheetConfig.tabNames.taxAccounts, setTaxRecords)} isReadOnly={false} />}
               {currentView === ViewState.SETTINGS && <DataIngest config={sheetConfig} onConfigChange={setSheetConfig} onSync={syncData} isSyncing={isSyncing} syncingTabs={syncingTabs} syncStatus={syncStatus} sheetUrl={sheetUrl} onSheetUrlChange={setSheetUrl} isDarkMode={isDarkMode} toggleTheme={toggleTheme} userProfile={userProfile} onProfileChange={setUserProfile} onSessionChange={setAuthSession} onSignOut={handleSignOut} onViewChange={setCurrentView} onTourStart={() => setIsTourActive(true)} activeYear={activeYear} onRolloverSuccess={handleRolloverSuccess} />}
               {currentView === ViewState.PRIVACY && <PrivacyPolicy onBack={() => setCurrentView(ViewState.SETTINGS)} />}
               {currentView === ViewState.TERMS && <TermsOfService onBack={() => setCurrentView(ViewState.SETTINGS)} />}
