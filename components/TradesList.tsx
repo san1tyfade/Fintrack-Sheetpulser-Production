@@ -9,6 +9,8 @@ interface TradesListProps {
   onAddTrade: (trade: Trade) => Promise<void>;
   onEditTrade?: (trade: Trade) => Promise<void>;
   onDeleteTrade?: (trade: Trade) => Promise<void>;
+  // Added isReadOnly to fix TypeScript errors in App.tsx
+  isReadOnly?: boolean;
 }
 
 // --- Sub-Component: AddTradeModal ---
@@ -52,7 +54,12 @@ const AddTradeModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
 
     if (!isOpen) return null;
 
-    const total = (formData.quantity || 0) * (formData.price || 0) + (formData.type === 'BUY' ? (formData.fee || 0) : -(formData.fee || 0));
+    // Standard total calculation: quantity * price + fee for BUY, quantity * price - fee for SELL
+    // Note: We use absolute values for display calculation
+    const displayQty = Math.abs(formData.quantity || 0);
+    const displayPrice = Math.abs(formData.price || 0);
+    const displayFee = Math.abs(formData.fee || 0);
+    const calculatedTotal = displayQty * displayPrice + (formData.type === 'BUY' ? displayFee : -displayFee);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -64,16 +71,23 @@ const AddTradeModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
 
         setIsSubmitting(true);
         try {
+            const rawQty = Math.abs(Number(formData.quantity));
+            const isSell = formData.type === 'SELL';
+            
+            // Convention: SELL trades should have negative quantities in the spreadsheet
+            // to ensure they are correctly registered even if the 'Type' column mapping fails.
+            const quantity = isSell ? -rawQty : rawQty;
+            
             const newTrade: Trade = {
                 id: initialData?.id || crypto.randomUUID(),
                 rowIndex: initialData?.rowIndex, // Preserve row index for edits
                 date: formData.date!,
                 ticker: formData.ticker.toUpperCase(),
                 type: formData.type as 'BUY' | 'SELL',
-                quantity: Number(formData.quantity),
+                quantity,
                 price: Number(formData.price),
                 fee: Number(formData.fee || 0),
-                total: total
+                total: calculatedTotal
             };
             await onSave(newTrade);
             onClose();
@@ -194,7 +208,7 @@ const AddTradeModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
                         <div className="bg-slate-100 dark:bg-slate-700/50 rounded-xl p-2 text-right">
                              <span className="block text-[10px] text-slate-500 uppercase font-bold">Est. Total</span>
                              <span className="font-mono font-bold text-lg text-slate-900 dark:text-white">
-                                 ${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                 ${calculatedTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                              </span>
                         </div>
                     </div>
@@ -366,7 +380,15 @@ const TradeGroup = memo(({ ticker, trades, isLoading, onDelete, onEdit }: { tick
 
 // --- Main Component ---
 
-export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = false, onAddTrade, onEditTrade, onDeleteTrade }) => {
+export const TradesList: React.FC<TradesListProps> = ({ 
+    trades, 
+    isLoading = false, 
+    onAddTrade, 
+    onEditTrade, 
+    onDeleteTrade,
+    // Destructured isReadOnly from props
+    isReadOnly = false 
+}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
@@ -404,12 +426,14 @@ export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = fals
                 Trades
                 {isLoading && <Loader2 className="animate-spin text-blue-500 dark:text-blue-400" size={24} />}
               </h2>
-              <button 
-                onClick={() => setIsAddModalOpen(true)}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5"
-              >
-                  <Plus size={16} /> Add Trade
-              </button>
+              {!isReadOnly && (
+                  <button 
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5"
+                  >
+                      <Plus size={16} /> Add Trade
+                  </button>
+              )}
           </div>
           <p className="text-slate-500 dark:text-slate-400 mt-1">Historical transaction log grouped by asset.</p>
         </div>
@@ -465,12 +489,14 @@ export const TradesList: React.FC<TradesListProps> = ({ trades, isLoading = fals
                 <History size={48} className="opacity-20 mb-4" />
                 <p className="font-medium">No trade history found.</p>
                 <p className="text-sm mt-1">Import from Sheet or click "Add Trade".</p>
-                <button 
-                    onClick={() => setIsAddModalOpen(true)}
-                    className="mt-4 text-blue-500 hover:text-blue-600 font-bold text-sm"
-                >
-                    + Create First Trade
-                </button>
+                {!isReadOnly && (
+                    <button 
+                        onClick={() => setIsAddModalOpen(true)}
+                        className="mt-4 text-blue-500 hover:text-blue-600 font-bold text-sm"
+                    >
+                        + Create First Trade
+                    </button>
+                )}
             </div>
         )}
 

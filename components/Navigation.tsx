@@ -9,6 +9,8 @@ interface NavigationProps {
   onSync: () => void;
   isSyncing: boolean;
   lastUpdated: Date | null;
+  isDarkMode: boolean;
+  toggleTheme: () => void;
 }
 
 export const Navigation: React.FC<NavigationProps> = ({ currentView, setView, onSync, isSyncing, lastUpdated }) => {

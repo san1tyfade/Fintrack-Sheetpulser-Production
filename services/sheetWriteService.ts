@@ -27,7 +27,7 @@ const mapTradeToRow = (trade: Trade, headers: string[]) => {
     setCellValue(row, headers, ['quantity', 'qty', 'units', 'shares', 'count', 'amount'], trade.quantity);
     setCellValue(row, headers, ['total', 'value', 'net', 'settlement'], trade.total); 
     setCellValue(row, headers, ['price', 'cost', 'rate', 'unitprice'], trade.price);
-    setCellValue(row, headers, ['type', 'action', 'side', 'direction'], trade.type);
+    setCellValue(row, headers, ['type', 'action', 'side', 'direction', 'buy/sell', 'transaction'], trade.type);
     setCellValue(row, headers, ['fee', 'commission', 'transaction', 'charge'], trade.fee || 0);
     return row;
 };

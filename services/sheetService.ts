@@ -80,6 +80,28 @@ export const fetchSheetData = async (sheetId: string, tabName: string): Promise<
 };
 
 /**
+ * Fetches metadata for all tabs in the spreadsheet.
+ */
+export const fetchTabNames = async (sheetId: string): Promise<string[]> => {
+    const token = getAccessToken();
+    const cleanId = extractSheetId(sheetId);
+    if (!token || !cleanId) return [];
+
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}?fields=sheets.properties.title`;
+    try {
+        const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.sheets?.map((s: any) => s.properties?.title) || [];
+    } catch (e) {
+        console.error("Failed to fetch tab names", e);
+        return [];
+    }
+};
+
+/**
  * Minimal validation for tab existence.
  */
 export const validateSheetTab = async (sheetId: string, tabName: string): Promise<boolean> => {

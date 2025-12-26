@@ -22,6 +22,11 @@ let currentClientId: string | null = null;
 
 let resolveQueue: Array<{ resolve: (token: string) => void }> = [];
 
+/**
+ * Narrowed scopes to follow the principle of least privilege.
+ * 'drive.readonly' was removed to avoid broad "See and download all files" warnings.
+ * The app now only interacts with files it creates or that the user explicitly picks.
+ */
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/userinfo.profile'
@@ -70,26 +75,10 @@ export const signIn = async (forceConsent = false): Promise<{token: string, expi
 
 export const getAccessToken = () => (accessToken && Date.now() < (tokenExpiration - 60000)) ? accessToken : null;
 
-export const signOut = async (): Promise<void> => {
-  return new Promise((resolve) => {
-    if (accessToken && window.google?.accounts?.oauth2) {
-      try {
-        window.google.accounts.oauth2.revoke(accessToken, () => {
-          accessToken = null;
-          tokenExpiration = 0;
-          resolve();
-        });
-      } catch (e) {
-        accessToken = null;
-        tokenExpiration = 0;
-        resolve();
-      }
-    } else {
-      accessToken = null;
-      tokenExpiration = 0;
-      resolve();
-    }
-  });
+export const signOut = () => {
+  if (accessToken) window.google?.accounts?.oauth2.revoke(accessToken, () => {});
+  accessToken = null;
+  tokenExpiration = 0;
 };
 
 export const fetchUserProfile = async (token: string): Promise<UserProfile | null> => {
@@ -97,11 +86,16 @@ export const fetchUserProfile = async (token: string): Promise<UserProfile | nul
   return res.ok ? res.json() : null;
 };
 
+/**
+ * Attempt to copy the master template. 
+ * With drive.file scope, this will likely fail with 403/404 because the app 
+ * does not have read access to the master file yet.
+ */
 export const copyMasterTemplate = async (templateId: string, fileName: string) => {
   const token = getAccessToken();
   if (!token) throw new Error("Auth required");
 
-  const res = await fetch(`https://docs.google.com/spreadsheets/d/${templateId}/copy`, {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${templateId}/copy`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: fileName })

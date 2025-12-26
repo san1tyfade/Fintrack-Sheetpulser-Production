@@ -1,5 +1,5 @@
 
-import { AlertCircle, ArrowRight, Check, CheckCircle2, Cloud, DollarSign, Download, ExternalLink, FileSpreadsheet, History, Info, Layers, Loader2, LogOut, Moon, RefreshCw, Scale, Search, Shield, ShieldCheck, Sparkles, Sun, Trash2, CalendarDays, DownloadCloud, UploadCloud, Database, Clock, CloudUpload, CloudDownload, Box, HardDrive, Lock, Unlock, Zap, AlertTriangle, PartyPopper, ChevronRight, User } from 'lucide-react';
+import { AlertCircle, ArrowRight, Check, CheckCircle2, Cloud, DollarSign, Download, ExternalLink, FileSpreadsheet, History, Info, Layers, Loader2, LogOut, Moon, RefreshCw, Scale, Search, Shield, ShieldCheck, Sparkles, Sun, Trash2, CalendarDays, DownloadCloud, UploadCloud, Database, Clock, CloudUpload, CloudDownload, Box, HardDrive, Lock, Unlock, Zap, AlertTriangle, PartyPopper } from 'lucide-react';
 import React, { memo, useEffect, useState, useRef } from 'react';
 import { fetchUserProfile, initGoogleAuth, signIn, copyMasterTemplate } from '../services/authService';
 import { openPicker } from '../services/pickerService';
@@ -28,6 +28,8 @@ interface DataIngestProps {
   onSignOut: () => void;
   onViewChange: (view: ViewState) => void;
   onTourStart: () => void;
+  activeYear: number;
+  onRolloverSuccess: (nextYear: number) => void;
 }
 
 const CompactTabInput = memo(({ label, value, onChange, onSync, sheetId, isSyncing }: any) => {
@@ -46,22 +48,24 @@ const CompactTabInput = memo(({ label, value, onChange, onSync, sheetId, isSynci
   const displayLabel = label === 'taxAccounts' ? 'Tax Records' : label;
 
   return (
-    <div className="flex flex-col gap-1 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700/50 hover:border-blue-400/30 transition-all group">
+    <div className="flex flex-col gap-1.5 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700/50 hover:border-blue-400/30 transition-all group">
       <div className="flex justify-between items-center">
-        <label className="text-[9px] text-slate-500 dark:text-slate-500 uppercase font-black tracking-widest truncate mr-2 group-hover:text-blue-500 transition-colors">{displayLabel}</label>
-        {isSyncing || status === 'checking' ? <Loader2 size={10} className="animate-spin text-blue-500" /> : 
+        <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider truncate mr-2 group-hover:text-blue-500 transition-colors">{displayLabel}</label>
+        {isSyncing || status === 'checking' ? <Loader2 size={10} className="animate-spin" /> : 
          status === 'valid' ? <CheckCircle2 size={10} className="text-emerald-500" /> : 
          status === 'invalid' ? <AlertCircle size={10} className="text-red-500" /> : null}
       </div>
       <div className="flex gap-1.5">
-        <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className="flex-1 bg-transparent text-xs outline-none font-bold text-slate-700 dark:text-slate-300" />
-        <button onClick={onSync} title="Sync this tab" disabled={isSyncing || !sheetId} className="p-1 text-slate-400 hover:text-blue-500 disabled:opacity-30 transition-colors">
+        <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className="flex-1 bg-transparent text-xs outline-none font-medium" />
+        <button onClick={onSync} disabled={isSyncing || !sheetId} className="p-1.5 text-slate-400 hover:text-blue-500 disabled:opacity-30">
           <RefreshCw size={12} className={isSyncing ? "animate-spin" : ""} />
         </button>
       </div>
     </div>
   );
 });
+
+// --- Phase 1 & 3: Rollover Stepper Component ---
 
 const RolloverStepper = ({ 
     isOpen, 
@@ -70,7 +74,8 @@ const RolloverStepper = ({
     sheetId, 
     incomeTab, 
     expenseTab, 
-    onSuccess 
+    onSuccess,
+    activeYear
 }: { 
     isOpen: boolean; 
     onClose: () => void; 
@@ -78,12 +83,12 @@ const RolloverStepper = ({
     sheetId: string;
     incomeTab: string;
     expenseTab: string;
-    onSuccess: () => void;
+    onSuccess: (nextYear: number) => void;
+    activeYear: number;
 }) => {
     const [step, setStep] = useState<'init' | 'syncing' | 'confirm' | 'rolling' | 'done'>('init');
     const [confirmYear, setConfirmYear] = useState('');
-    const currentYear = new Date().getFullYear();
-    const nextYear = currentYear + 1;
+    const nextYear = activeYear + 1;
 
     if (!isOpen) return null;
 
@@ -99,15 +104,16 @@ const RolloverStepper = ({
     };
 
     const runRollover = async () => {
-        if (confirmYear !== String(currentYear)) {
-            alert(`Please type ${currentYear} to confirm.`);
+        if (confirmYear !== String(activeYear)) {
+            alert(`Please type ${activeYear} to confirm.`);
             return;
         }
         setStep('rolling');
         try {
             await resetYearlyLedger(sheetId, incomeTab, expenseTab);
             setStep('done');
-            onSuccess();
+            // Notify parent that we are now in the next financial year
+            onSuccess(nextYear);
         } catch (e: any) {
             alert(`Rollover failed: ${e.message}`);
             setStep('confirm');
@@ -125,8 +131,8 @@ const RolloverStepper = ({
                             {step === 'done' ? <PartyPopper size={24} /> : <Zap size={24} />}
                         </div>
                         <div>
-                            <h3 className="text-xl font-black text-slate-900 dark:text-white">Close Financial Year {currentYear}</h3>
-                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Year-End Maintenance Wizard</p>
+                            <h3 className="text-xl font-black text-slate-900 dark:text-white">Close Financial Year {activeYear}</h3>
+                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Year-End Maintenance Wizard</p>
                         </div>
                     </div>
 
@@ -156,7 +162,7 @@ const RolloverStepper = ({
                         {step === 'syncing' && (
                             <div className="flex flex-col items-center justify-center py-8 space-y-4">
                                 <Loader2 size={48} className="text-blue-500 animate-spin" />
-                                <p className="text-sm font-bold text-slate-900 dark:text-white">Synchronizing {currentYear} Records...</p>
+                                <p className="text-sm font-bold text-slate-900 dark:text-white">Synchronizing {activeYear} Records...</p>
                                 <p className="text-xs text-slate-500">Verifying local vault against Google Sheets</p>
                             </div>
                         )}
@@ -168,20 +174,20 @@ const RolloverStepper = ({
                                     <div className="space-y-1">
                                         <p className="text-xs font-bold text-amber-900 dark:text-amber-200 uppercase">What happens next?</p>
                                         <ul className="text-xs text-amber-800/80 dark:text-amber-300/80 space-y-1 list-disc pl-4">
-                                            <li>Archives "{incomeTab}" to "{incomeTab}-{String(currentYear).slice(-2)}"</li>
-                                            <li>Archives "{expenseTab}" to "{expenseTab}-{String(currentYear).slice(-2)}"</li>
+                                            <li>Archives "{incomeTab}" to "{incomeTab}-{String(activeYear).slice(-2)}"</li>
+                                            <li>Archives "{expenseTab}" to "{expenseTab}-{String(activeYear).slice(-2)}"</li>
                                             <li>Wipes current transactions to start {nextYear} at $0</li>
                                             <li>Historical data remains accessible via Time Machine</li>
                                         </ul>
                                     </div>
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-black uppercase text-slate-400">Type "{currentYear}" to confirm</label>
+                                    <label className="text-[10px] font-black uppercase text-slate-400">Type "{activeYear}" to confirm</label>
                                     <input 
                                         type="text" 
                                         value={confirmYear} 
                                         onChange={e => setConfirmYear(e.target.value)}
-                                        placeholder={String(currentYear)}
+                                        placeholder={String(activeYear)}
                                         className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-center text-xl font-black focus:border-blue-500 outline-none transition-all"
                                     />
                                 </div>
@@ -189,7 +195,7 @@ const RolloverStepper = ({
                                     <button onClick={onClose} className="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white font-bold py-4 rounded-2xl">Cancel</button>
                                     <button 
                                         onClick={runRollover}
-                                        disabled={confirmYear !== String(currentYear)}
+                                        disabled={confirmYear !== String(activeYear)}
                                         className="flex-[2] bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold py-4 rounded-2xl shadow-xl shadow-blue-500/20 transition-all"
                                     >
                                         Archive & Start {nextYear}
@@ -213,10 +219,10 @@ const RolloverStepper = ({
                                 </div>
                                 <div className="space-y-2">
                                     <h4 className="text-2xl font-black text-slate-900 dark:text-white">Rollover Successful!</h4>
-                                    <p className="text-sm text-slate-500">Your {currentYear} data is safely archived. The active spreadsheet is now ready for {nextYear}.</p>
+                                    <p className="text-sm text-slate-500">Your {activeYear} data is safely archived. The active spreadsheet is now ready for {nextYear}.</p>
                                 </div>
                                 <button onClick={onClose} className="w-full bg-slate-900 dark:bg-slate-700 text-white font-bold py-4 rounded-2xl shadow-xl">
-                                    Back to Dashboard
+                                    Start {nextYear} Chapter
                                 </button>
                             </div>
                         )}
@@ -228,8 +234,9 @@ const RolloverStepper = ({
 };
 
 export const DataIngest: React.FC<DataIngestProps> = (props) => {
-  const { config, onConfigChange, onSync, isSyncing, syncingTabs, syncStatus, sheetUrl, onSheetUrlChange, isDarkMode, toggleTheme, userProfile, onProfileChange, onSessionChange, onSignOut, onViewChange, onTourStart } = props;
+  const { config, onConfigChange, onSync, isSyncing, syncingTabs, syncStatus, sheetUrl, onSheetUrlChange, isDarkMode, toggleTheme, userProfile, onProfileChange, onSessionChange, onSignOut, onViewChange, onTourStart, activeYear, onRolloverSuccess } = props;
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [onboardingStatus, setOnboardingStatus] = useState<'idle' | 'cloning' | 'syncing' | 'complete' | 'error' | 'manual'>('idle');
   
   const [isBackingUp, setIsBackingUp] = useState(false);
@@ -246,7 +253,7 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
 
   useEffect(() => {
     refreshArchives();
-  }, []);
+  }, [activeYear]);
 
   const refreshArchives = async () => {
     setIsLoadingArchives(true);
@@ -325,6 +332,10 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
   };
 
   const handleDeleteArchive = async (year: number) => {
+    if (year === activeYear) {
+        alert("You cannot delete the active financial year from local storage.");
+        return;
+    }
     if (!confirm(`Delete all local records for ${year}? This only affects local storage.`)) return;
     await deleteLocalYear(year);
     refreshArchives();
@@ -395,220 +406,203 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-10 animate-fade-in pb-20">
-      
-      {/* 1. Account & UI Header Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 flex flex-col sm:flex-row justify-between items-center gap-6 shadow-sm">
-            <div className="flex items-center gap-5">
-                <div className="relative">
-                    <img src={userProfile?.picture} alt="" className="w-16 h-16 rounded-full border-4 border-slate-50 dark:border-slate-800 shadow-md" />
-                    <div className="absolute -bottom-1 -right-1 bg-emerald-500 w-5 h-5 rounded-full border-4 border-white dark:border-slate-850" />
+    <div className="max-w-5xl mx-auto space-y-8 animate-fade-in pb-10">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-6 flex flex-col justify-between min-h-[220px]">
+            <div className="flex justify-between items-start">
+                <div className="flex items-center gap-4">
+                    <img src={userProfile?.picture} alt="" className="w-12 h-12 rounded-full border-2 border-slate-100 dark:border-slate-700 shadow-sm" />
+                    <div><h4 className="font-bold text-slate-900 dark:text-white">{userProfile?.name}</h4><p className="text-xs text-slate-500">{userProfile?.email}</p></div>
                 </div>
-                <div className="text-center sm:text-left">
-                    <h4 className="text-xl font-black text-slate-900 dark:text-white leading-none">{userProfile?.name}</h4>
-                    <p className="text-xs font-bold text-slate-400 dark:text-slate-500 mt-2 uppercase tracking-widest">{userProfile?.email}</p>
-                </div>
+                <button onClick={onSignOut} className="text-slate-400 hover:text-red-500 transition-colors"><LogOut size={18} /></button>
             </div>
-            <div className="flex gap-2">
-                <button onClick={toggleTheme} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 hover:border-blue-500/30 transition-all" title="Toggle Theme">
-                    {isDarkMode ? <Moon size={20} className="text-blue-400" /> : <Sun size={20} className="text-yellow-500" />}
-                </button>
-                <button onClick={onSignOut} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 hover:text-red-500 hover:border-red-500/30 transition-all" title="Sign Out">
-                    <LogOut size={20} />
-                </button>
+            <div className="pt-6 border-t border-slate-100 dark:border-slate-700/50 space-y-3">
+                <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-400"><span>Active Data Source</span><a href={sheetUrl} target="_blank" rel="noreferrer" className="text-blue-500 flex items-center gap-1 hover:underline">Open in Sheets <ExternalLink size={10} /></a></div>
+                <div className="flex gap-2"><div className="flex-1 bg-slate-50 dark:bg-slate-900 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700 text-xs text-slate-500 truncate">ID: {config.sheetId}</div><button onClick={handleOpenPicker} className="bg-blue-600 text-white px-4 py-3 rounded-xl font-bold text-xs hover:bg-blue-500 shadow-lg shadow-blue-500/20"><Search size={16} /></button></div>
             </div>
         </div>
-        <div className="bg-blue-600 dark:bg-blue-600/10 border-2 border-blue-600/10 rounded-3xl p-6 flex flex-col justify-center items-center text-center shadow-lg shadow-blue-500/10">
-            <div className="p-3 bg-white/20 rounded-2xl mb-3 text-white">
-                <ShieldCheck size={28} />
-            </div>
-            <h4 className="text-sm font-black text-white dark:text-blue-400 uppercase tracking-widest mb-1">Secure & Private</h4>
-            <button onClick={() => onViewChange(ViewState.PRIVACY)} className="text-[10px] font-bold text-blue-100 dark:text-blue-500 uppercase tracking-widest hover:underline flex items-center gap-1">Review Privacy Policy <ExternalLink size={10} /></button>
-        </div>
-      </div>
-
-      {/* 2. Spreadsheet Connection Section */}
-      <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
-        <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50/30 dark:bg-slate-900/10">
-            <div className="flex items-center gap-4">
-                <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"><FileSpreadsheet size={24} /></div>
-                <div>
-                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Spreadsheet Source</h3>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter mt-1">Google Sheets Connectivity</p>
-                </div>
-            </div>
-            <div className="flex gap-2 w-full sm:w-auto">
-                <a href={sheetUrl} target="_blank" rel="noreferrer" className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-900 dark:bg-slate-700 text-white px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all shadow-md">
-                    Open in Sheets <ExternalLink size={14} />
-                </a>
-                <button onClick={handleOpenPicker} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-emerald-600 text-white px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-md">
-                    Change Source <Search size={14} />
-                </button>
-            </div>
-        </div>
-        <div className="p-8 space-y-10">
-            <div className="flex flex-col sm:flex-row gap-6 items-center">
-                <div className="flex-1 w-full">
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Connected ID</p>
-                    <div className="bg-slate-50 dark:bg-slate-900 px-5 py-4 rounded-2xl border border-slate-100 dark:border-slate-800 text-xs font-bold text-slate-500 truncate select-all">{config.sheetId}</div>
-                </div>
-                <div className="shrink-0 pt-6">
-                    <button onClick={() => onSync()} disabled={isSyncing} className="flex items-center gap-3 bg-blue-600 text-white px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-blue-500 shadow-xl shadow-blue-500/20 disabled:opacity-50 transition-all">
-                        {isSyncing ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />} Full Database Sync
-                    </button>
-                </div>
-            </div>
-
-            <div className="space-y-6 pt-6 border-t border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-2 px-1 text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest"><Layers size={14} /> Active Tab Mappings</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {Object.keys(config.tabNames).map(key => (
-                        <CompactTabInput 
-                            key={key} 
-                            label={key} 
-                            value={config.tabNames[key as keyof SheetConfig['tabNames']]} 
-                            onChange={(v: string) => onConfigChange({ ...config, tabNames: { ...config.tabNames, [key]: v } })} 
-                            onSync={() => onSync([key as any])} 
-                            sheetId={config.sheetId} 
-                            isSyncing={syncingTabs.has(key)} 
-                        />
-                    ))}
-                </div>
-                {syncStatus && (
-                    <div className={`p-4 rounded-2xl border text-xs font-bold flex items-center justify-center gap-3 transition-all ${syncStatus.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-500/5 border-emerald-200 dark:border-emerald-900/30 text-emerald-600' : syncStatus.type === 'warning' ? 'bg-amber-50 dark:bg-amber-500/5 border-amber-200 dark:border-amber-900/30 text-amber-600' : 'bg-red-50 dark:bg-red-500/5 border-red-200 dark:border-red-900/30 text-red-600'}`}>
-                        {syncStatus.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />} {syncStatus.msg}
-                    </div>
-                )}
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-2xl shadow-sm space-y-6">
+            <h4 className="text-xs font-bold uppercase text-slate-400">Preferences</h4>
+            <button onClick={toggleTheme} className="w-full flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-blue-500/30 transition-all">
+                <span className="text-xs font-bold">{isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>{isDarkMode ? <Moon size={16} className="text-blue-400" /> : <Sun size={16} className="text-yellow-500" />}
+            </button>
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-700/50 space-y-3">
+                <button onClick={() => onViewChange(ViewState.PRIVACY)} className="w-full flex items-center justify-between text-[10px] font-bold text-slate-500 hover:text-blue-500 uppercase tracking-widest">Privacy Policy <ArrowRight size={10} /></button>
+                <button onClick={() => { if(confirm("Wipe all local data?")) { const req = indexedDB.deleteDatabase('FinTrackDB'); req.onsuccess = () => window.location.reload(); } }} className="w-full flex items-center justify-between text-[10px] font-bold text-red-500 hover:text-red-600 uppercase tracking-widest">Wipe Local Database <Trash2 size={10} /></button>
             </div>
         </div>
       </div>
 
-      {/* 3. Portability & Backup Tools */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 shadow-sm space-y-6 group">
-                <div className="flex items-center gap-4 mb-4">
-                    <div className="p-3 bg-indigo-500/10 rounded-2xl text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 group-hover:scale-110 transition-transform"><Cloud size={24} /></div>
-                    <div>
-                        <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Cloud Vault</h3>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-1">Google Drive Integration</p>
-                    </div>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">Synchronize your entire local application database to a hidden file on Google Drive for cross-device portability.</p>
-                <div className="flex flex-col sm:flex-row gap-3 pt-4">
-                    <button onClick={handleCloudSync} disabled={isCloudSyncing} className="flex-1 flex items-center justify-center gap-2 bg-slate-900 dark:bg-slate-700 text-white px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all shadow-md disabled:opacity-50">
-                        {isCloudSyncing ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} />} Sync to Drive
-                    </button>
-                    <button onClick={handleCloudRestore} disabled={isCloudSyncing} className="flex-1 flex items-center justify-center gap-2 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 text-slate-900 dark:text-white px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50">
-                        {isCloudSyncing ? <Loader2 size={16} className="animate-spin" /> : <CloudDownload size={16} />} Restore from Drive
-                    </button>
-                </div>
-                {lastCloudSyncAt && (
-                    <div className="flex items-center justify-center gap-2 text-[9px] font-black text-slate-400 uppercase bg-slate-50 dark:bg-slate-900/50 py-2 rounded-xl border border-slate-100 dark:border-slate-800">
-                        <Clock size={10} /> Cloud Last Updated: {new Date(lastCloudSyncAt).toLocaleDateString()}
-                    </div>
-                )}
+      {/* Phase 1 & 3: Year-End Maintenance */}
+      <div className="bg-white dark:bg-slate-800 border-2 border-blue-500/20 dark:border-blue-500/10 rounded-3xl p-8 shadow-xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none group-hover:bg-blue-500/10 transition-all"></div>
+          <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
+              <div className="p-5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-2xl border border-blue-500/20">
+                  <Zap size={32} />
+              </div>
+              <div className="flex-1 text-center md:text-left space-y-1">
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white">Year-End Maintenance</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Ready to start a new financial chapter? This wizard will archive your current ledger and prepare a fresh, clean spreadsheet for the upcoming year.
+                  </p>
+              </div>
+              <button 
+                onClick={() => setIsRolloverOpen(true)}
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 py-4 rounded-2xl shadow-xl shadow-blue-500/20 transition-all hover:-translate-y-0.5 active:scale-[0.98] whitespace-nowrap"
+              >
+                  Close Financial Year {activeYear}
+              </button>
           </div>
 
-          <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 shadow-sm space-y-6 group">
-                <div className="flex items-center gap-4 mb-4">
-                    <div className="p-3 bg-purple-500/10 rounded-2xl text-purple-600 dark:text-purple-400 border border-purple-500/20 group-hover:scale-110 transition-transform"><Database size={24} /></div>
-                    <div>
-                        <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Local Snapshot</h3>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-1">JSON Backup & Restore</p>
-                    </div>
+          <RolloverStepper 
+              isOpen={isRolloverOpen} 
+              onClose={() => setIsRolloverOpen(false)} 
+              onSync={async (tabs) => onSync(tabs)}
+              sheetId={config.sheetId}
+              incomeTab={config.tabNames.income}
+              expenseTab={config.tabNames.expenses}
+              activeYear={activeYear}
+              onSuccess={(nextYear) => {
+                  onRolloverSuccess(nextYear);
+                  refreshArchives();
+              }}
+          />
+      </div>
+
+      {/* Storage & Archive Management */}
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-6">
+          <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-4">
+              <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-600 dark:text-blue-400 border border-blue-500/20"><Box size={20} /></div>
+                  <div>
+                    <h3 className="text-sm font-bold">Storage & Archives</h3>
+                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tight">On-device Vault Persistence</p>
+                  </div>
+              </div>
+              <button onClick={refreshArchives} className="p-2 text-slate-400 hover:text-blue-500 transition-colors"><RefreshCw size={14} className={isLoadingArchives ? "animate-spin" : ""} /></button>
+          </div>
+          
+          <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-900/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      <tr>
+                          <th className="px-4 py-3">Financial Year</th>
+                          <th className="px-4 py-3">Local Records</th>
+                          <th className="px-4 py-3">Persistence</th>
+                          <th className="px-4 py-3 text-right">Actions</th>
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                      {localArchives.map(archive => {
+                          const isActive = archive.year === activeYear;
+                          return (
+                            <tr key={archive.year} className={`hover:bg-slate-50 dark:hover:bg-slate-900/30 group ${isActive ? 'bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
+                                <td className="px-4 py-4 font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                    <CalendarDays size={14} className={isActive ? "text-blue-500" : "text-slate-400"} /> 
+                                    {archive.year}
+                                    {isActive && <span className="text-[9px] bg-blue-600 text-white px-1.5 py-0.5 rounded ml-2">ACTIVE</span>}
+                                </td>
+                                <td className="px-4 py-4 font-mono text-slate-500">{archive.records} objects</td>
+                                <td className="px-4 py-4">
+                                    <div className={`flex items-center gap-1.5 text-[9px] font-black uppercase ${isActive ? 'text-blue-600' : 'text-emerald-600'}`}>
+                                        <HardDrive size={10} /> Local Vault
+                                    </div>
+                                </td>
+                                <td className="px-4 py-4 text-right">
+                                    <div className="flex justify-end gap-2">
+                                        <button 
+                                          onClick={() => handleDeleteArchive(archive.year)}
+                                          disabled={isActive}
+                                          className={`p-1.5 transition-colors ${isActive ? 'text-slate-200 dark:text-slate-800 cursor-not-allowed' : 'text-slate-300 hover:text-red-500'}`}
+                                          title={isActive ? "Cannot delete active year" : "Clear local cache for this year"}
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                          );
+                      })}
+                      {localArchives.length === 0 && (
+                          <tr>
+                              <td colSpan={4} className="px-4 py-8 text-center text-slate-400 italic">No historical archives detected in the local vault.</td>
+                          </tr>
+                      )}
+                  </tbody>
+              </table>
+          </div>
+      </div>
+
+      {/* Tab Mappings */}
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-6">
+        <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-500 dark:text-indigo-400 border border-indigo-500/20"><Layers size={20} /></div>
+            <h3 className="text-sm font-bold">Tab Mappings</h3>
+          </div>
+          <button onClick={() => onSync()} disabled={isSyncing} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-500 shadow-lg disabled:opacity-50">
+            {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sync All Tabs
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[
+            { t: 'Portfolio', i: Layers, k: ['assets', 'investments', 'trades'] },
+            { t: 'Flow', i: DollarSign, k: ['income', 'expenses', 'subscriptions', 'debt'] },
+            { t: 'Logs & Records', i: History, k: ['accounts', 'logData', 'taxAccounts'] }
+          ].map(cat => (
+            <div key={cat.t} className="space-y-3">
+              <div className="flex items-center gap-2 px-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><cat.i size={12} /> {cat.t}</div>
+              <div className="space-y-2">
+                {cat.k.map(key => (
+                  <CompactTabInput key={key} label={key} value={config.tabNames[key as keyof SheetConfig['tabNames']]} onChange={(v: string) => onConfigChange({ ...config, tabNames: { ...config.tabNames, [key]: v } })} onSync={() => onSync([key as any])} sheetId={config.sheetId} isSyncing={syncingTabs.has(key)} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        {syncStatus && (
+          <div className={`p-3 rounded-xl border text-[11px] font-bold flex items-center gap-2 ${syncStatus.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 text-emerald-600' : syncStatus.type === 'warning' ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 text-amber-600' : 'bg-red-50 dark:bg-red-500/10 border-red-200 text-red-600'}`}>
+            {syncStatus.type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />} {syncStatus.msg}
+          </div>
+        )}
+      </div>
+
+      {/* Cloud & Local Portability */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/30 rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-3 mb-6">
+                <div className="p-2.5 bg-emerald-500/10 rounded-xl text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"><Cloud size={20} /></div>
+                <div><h3 className="text-sm font-bold">Cloud Vault</h3><p className="text-[10px] text-emerald-500 uppercase font-bold tracking-tight">Auto-Sync IndexedDB to Drive</p></div>
+            </div>
+            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-2xl flex flex-col gap-4">
+                <div className="space-y-1 text-left">
+                    <div className="flex justify-between items-start"><h4 className="font-bold text-slate-900 dark:text-white">Google Drive Sync</h4>{lastCloudSyncAt && (<div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase bg-slate-50 dark:bg-slate-900/50 px-2 py-1 rounded-md border border-slate-100 dark:border-slate-800"><Clock size={10} /> Last: {new Date(lastCloudSyncAt).toLocaleDateString()}</div>)}</div>
+                    <p className="text-xs text-slate-500 leading-relaxed">Securely store your local database in a hidden file on your Google Drive.</p>
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">Download a complete snapshot of your data as a JSON file. This can be re-imported later to restore your session exactly.</p>
-                <div className="flex flex-col sm:flex-row gap-3 pt-4">
-                    <button onClick={handleExport} disabled={isBackingUp} className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 text-white px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-md disabled:opacity-50">
-                        {isBackingUp ? <Loader2 size={16} className="animate-spin" /> : <DownloadCloud size={16} />} Export Backup
-                    </button>
-                    <button onClick={() => fileInputRef.current?.click()} disabled={isBackingUp} className="flex-1 flex items-center justify-center gap-2 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 text-slate-900 dark:text-white px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50">
-                        {isBackingUp ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />} Import Snapshot
-                    </button>
+                <div className="grid grid-cols-2 gap-3">
+                    <button onClick={handleCloudSync} disabled={isCloudSyncing} className="bg-slate-900 dark:bg-slate-700 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50">{isCloudSyncing ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} />} Sync to Cloud</button>
+                    <button onClick={handleCloudRestore} disabled={isCloudSyncing} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50">{isCloudSyncing ? <Loader2 size={16} className="animate-spin" /> : <CloudDownload size={16} />} Restore</button>
+                </div>
+            </div>
+          </div>
+
+          <div className="bg-indigo-50/50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30 rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-3 mb-6">
+                <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-600 dark:text-indigo-400 border border-indigo-500/20"><Database size={20} /></div>
+                <div><h3 className="text-sm font-bold">Local Export</h3><p className="text-[10px] text-indigo-500 uppercase font-bold tracking-tight">Manual JSON Backups</p></div>
+            </div>
+            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-2xl flex flex-col gap-4">
+                <div className="space-y-1 text-left">
+                    <div className="flex justify-between items-start"><h4 className="font-bold text-slate-900 dark:text-white">File Export</h4>{lastBackupAt && (<div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase bg-slate-50 dark:bg-slate-900/50 px-2 py-1 rounded-md border border-slate-100 dark:border-slate-800"><Clock size={10} /> Last: {new Date(lastBackupAt).toLocaleDateString()}</div>)}</div>
+                    <p className="text-xs text-slate-500 leading-relaxed">Export your local IndexedDB for offline safekeeping.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                    <button onClick={handleExport} disabled={isBackingUp} className="bg-emerald-600 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 transition-all flex items-center justify-center gap-2 disabled:opacity-50">{isBackingUp ? <Loader2 size={16} className="animate-spin" /> : <DownloadCloud size={16} />} Export</button>
+                    <button onClick={() => fileInputRef.current?.click()} disabled={isBackingUp} className="bg-blue-600 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-500 transition-all flex items-center justify-center gap-2 disabled:opacity-50">{isBackingUp ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />} Import</button>
                     <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
                 </div>
-                {lastBackupAt && (
-                    <div className="flex items-center justify-center gap-2 text-[9px] font-black text-slate-400 uppercase bg-slate-50 dark:bg-slate-900/50 py-2 rounded-xl border border-slate-100 dark:border-slate-800">
-                        <Clock size={10} /> Local Last Exported: {new Date(lastBackupAt).toLocaleDateString()}
-                    </div>
-                )}
+            </div>
           </div>
-      </div>
-
-      {/* 4. Archives & Maintenance Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-          <div className="lg:col-span-3 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden flex flex-col">
-                <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/30 dark:bg-slate-900/10">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-600 dark:text-blue-400 border border-blue-500/20"><Box size={24} /></div>
-                        <div>
-                            <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Local Archives</h3>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter mt-1">Device Persistent Vaults</p>
-                        </div>
-                    </div>
-                    <button onClick={refreshArchives} className="p-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 hover:text-blue-500 transition-colors shadow-sm"><RefreshCw size={16} className={isLoadingArchives ? "animate-spin" : ""} /></button>
-                </div>
-                <div className="flex-1">
-                    <table className="w-full text-left">
-                        <thead className="bg-slate-50/50 dark:bg-slate-900/30">
-                            <tr>
-                                <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Year</th>
-                                <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Objects</th>
-                                <th className="px-8 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Control</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                            {localArchives.map(archive => (
-                                <tr key={archive.year} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                                    <td className="px-8 py-5 font-black text-slate-900 dark:text-white flex items-center gap-3"><CalendarDays size={16} className="text-blue-500" /> {archive.year}</td>
-                                    <td className="px-8 py-5"><span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold text-slate-500 uppercase tracking-tighter border border-slate-200 dark:border-slate-700">{archive.records} Records</span></td>
-                                    <td className="px-8 py-5 text-right">
-                                        <button onClick={() => handleDeleteArchive(archive.year)} className="p-2 text-slate-300 hover:text-red-500 transition-colors" title="Purge local storage"><Trash2 size={16} /></button>
-                                    </td>
-                                </tr>
-                            ))}
-                            {localArchives.length === 0 && (
-                                <tr>
-                                    <td colSpan={3} className="px-8 py-16 text-center text-slate-400 italic text-sm font-medium">No historical archives detected in the local vault.</td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-          </div>
-
-          <div className="lg:col-span-2 bg-gradient-to-br from-blue-600 to-blue-700 dark:from-slate-800 dark:to-slate-850 rounded-3xl p-8 text-white shadow-xl shadow-blue-500/20 relative overflow-hidden flex flex-col justify-between group">
-                <div className="absolute top-0 right-0 w-48 h-48 bg-white/5 rounded-full blur-3xl -mr-20 -mt-20 group-hover:scale-125 transition-transform duration-1000" />
-                <div className="relative space-y-4">
-                    <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mb-6"><Zap size={32} /></div>
-                    <h3 className="text-2xl font-black leading-tight">Year-End Maintenance</h3>
-                    <p className="text-xs text-blue-100 dark:text-slate-400 leading-relaxed font-bold opacity-80">Close out your current financial year. This will archive your transactions and prepare a clean slate for the new year.</p>
-                </div>
-                <div className="relative pt-10">
-                    <button onClick={() => setIsRolloverOpen(true)} className="w-full bg-white dark:bg-blue-600 text-blue-600 dark:text-white px-8 py-5 rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl hover:-translate-y-1 transition-all active:scale-95 flex items-center justify-center gap-3">
-                        Launch Maintenance Wizard <ChevronRight size={18} />
-                    </button>
-                </div>
-
-                <RolloverStepper 
-                    isOpen={isRolloverOpen} 
-                    onClose={() => setIsRolloverOpen(false)} 
-                    onSync={async (tabs) => onSync(tabs)}
-                    sheetId={config.sheetId}
-                    incomeTab={config.tabNames.income}
-                    expenseTab={config.tabNames.expenses}
-                    onSuccess={() => { refreshArchives(); }}
-                />
-          </div>
-      </div>
-
-      {/* 5. Danger Zone */}
-      <div className="pt-10 border-t border-slate-100 dark:border-slate-800 flex flex-col items-center">
-            <button onClick={() => { if(confirm("ABSOLUTE DATA WIPE: This will permanently delete your entire local database (Assets, History, Keys). Google Sheets data will NOT be touched. Continue?")) { const req = indexedDB.deleteDatabase('FinTrackDB'); req.onsuccess = () => window.location.reload(); } }} className="flex items-center gap-2 text-red-500 hover:text-red-600 text-[10px] font-black uppercase tracking-widest transition-colors px-6 py-3 bg-red-50 dark:bg-red-500/5 rounded-2xl border border-red-100 dark:border-red-900/30">
-                <Trash2 size={14} /> Factory Reset Application Data
-            </button>
-            <p className="text-[9px] text-slate-400 font-bold mt-3 uppercase tracking-tighter italic">Warning: This action is irreversible.</p>
       </div>
     </div>
   );
