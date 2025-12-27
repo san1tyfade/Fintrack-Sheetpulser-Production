@@ -259,6 +259,9 @@ const NetWorthChart = memo(({
     const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
     const tooltipBorder = isDarkMode ? '#334155' : '#cbd5e1';
 
+    // Hide principal line for MTD and QTD as it is conceptually misleading in those short windows
+    const showPrincipal = timeFocus !== TimeFocus.MTD && timeFocus !== TimeFocus.QTD;
+
     const filteredData = useMemo(() => {
         const yearFiltered = data.filter(d => d.date.startsWith(String(selectedYear)));
         // Logic: Time focusing (MTD/YTD) only makes sense relative to "today". 
@@ -310,7 +313,9 @@ const NetWorthChart = memo(({
                         <TrendingUp size={20} className="text-emerald-500 dark:text-emerald-400" />
                         Net Worth History
                     </h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Principal vs. Market Growth</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                        {showPrincipal ? "Principal vs. Market Growth" : "Market Valuation Trend"}
+                    </p>
                 </div>
                 {!isHistorical && onFocusChange && (
                     <TimeFocusSelector current={timeFocus} onChange={onFocusChange} />
@@ -367,17 +372,19 @@ const NetWorthChart = memo(({
                                 labelFormatter={formatTooltipDate}
                                 cursor={{ stroke: axisColor, strokeWidth: 1, strokeDasharray: '4 4' }}
                             />
-                            <Area 
-                                type="monotone" 
-                                dataKey="principal" 
-                                stroke="#3b82f6" 
-                                strokeWidth={2}
-                                strokeDasharray="5 5"
-                                fillOpacity={1} 
-                                fill="url(#colorPrincipal)" 
-                                animationDuration={1000}
-                                activeDot={false}
-                            />
+                            {showPrincipal && (
+                                <Area 
+                                    type="monotone" 
+                                    dataKey="principal" 
+                                    stroke="#3b82f6" 
+                                    strokeWidth={2}
+                                    strokeDasharray="5 5"
+                                    fillOpacity={1} 
+                                    fill="url(#colorPrincipal)" 
+                                    animationDuration={1000}
+                                    activeDot={false}
+                                />
+                            )}
                             <Area 
                                 type="monotone" 
                                 dataKey="value" 
