@@ -204,7 +204,7 @@ const AddAssetModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
                             <select 
                                 value={formData.currency}
                                 onChange={e => setFormData({...formData, currency: e.target.value})}
-                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none appearance-none"
                             >
                                 <option value="CAD">CAD</option>
                                 <option value="USD">USD</option>
@@ -366,17 +366,6 @@ export const AssetsList: React.FC<AssetsListProps> = ({
     });
   }, [assets, searchTerm, filterType, sortKey, exchangeRates]);
 
-  const metrics = useMemo(() => {
-    let cash = 0, fixed = 0, total = 0;
-    assets.forEach(a => {
-        const val = convertToBase(a.value, a.currency, exchangeRates);
-        total += val;
-        if (isFixedAsset(a)) fixed += val;
-        else cash += val; // Liquid (Cash + Invest)
-    });
-    return { cash, fixed, total, liquidPct: total > 0 ? (cash / total) * 100 : 0 };
-  }, [assets, exchangeRates]);
-
   return (
     <div className={`space-y-8 animate-fade-in pb-20 ${isGhostMode ? 'ghost-mode-active' : ''}`}>
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -393,23 +382,6 @@ export const AssetsList: React.FC<AssetsListProps> = ({
               )}
           </div>
           <p className="text-slate-500 dark:text-slate-400 font-medium">Professional asset inventory & analysis.</p>
-        </div>
-
-        {/* Analytics Strip */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-3xl flex items-center gap-6 shadow-sm min-w-[320px]">
-            <div className="shrink-0 w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-                <PieChart size={24} />
-            </div>
-            <div className="flex-1 space-y-2">
-                <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                    <span>Liquidity Ratio</span>
-                    <span className="text-slate-900 dark:text-white">{metrics.liquidPct.toFixed(0)}% Liquid</span>
-                </div>
-                <div className="h-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden flex">
-                    <div className="h-full bg-emerald-500" style={{ width: `${metrics.liquidPct}%` }} />
-                    <div className="h-full bg-blue-500" style={{ width: `${100 - metrics.liquidPct}%` }} />
-                </div>
-            </div>
         </div>
       </header>
 
@@ -464,13 +436,11 @@ export const AssetsList: React.FC<AssetsListProps> = ({
 
       <MarketLookupModal 
         asset={researchingAsset}
-        // Fixed: Removed reference to undefined 'researchMode'
         isOpen={!!researchingAsset}
         onClose={() => setResearchingAsset(null)}
       />
 
       <div className="transition-all duration-500">
-        {/* Fixed: Removed reference to undefined 'researchMode' */}
         {isTableView ? (
             <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-3xl overflow-hidden shadow-sm animate-fade-in">
                 <table className="w-full text-left">
