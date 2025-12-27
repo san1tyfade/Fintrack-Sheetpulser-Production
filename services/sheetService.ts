@@ -1,3 +1,4 @@
+
 import { getAccessToken } from './authService';
 
 /**
@@ -101,38 +102,21 @@ export const fetchTabNames = async (sheetId: string): Promise<string[]> => {
 };
 
 /**
- * Validates tab existence and optionally checks for required keywords in headers.
+ * Minimal validation for tab existence.
  */
-export const validateSheetTab = async (sheetId: string, tabName: string, keywords?: string[]): Promise<boolean | 'missing_headers'> => {
+export const validateSheetTab = async (sheetId: string, tabName: string): Promise<boolean> => {
     try {
         const token = getAccessToken();
         const cleanId = extractSheetId(sheetId);
         if (!cleanId || !tabName || !token) return false;
         
-        // Fetch more than just A1 to check headers if keywords are provided
-        const range = keywords ? `${tabName}!A1:Z5` : `${tabName}!A1`;
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}/values/${encodeURIComponent(range)}`;
+        // Remove empty ?key= parameter as it can cause authentication mismatches
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}/values/${encodeURIComponent(tabName + '!A1')}`;
         
         const res = await fetch(url, { 
             headers: { Authorization: `Bearer ${token}` } 
         });
-        
-        if (!res.ok) return false;
-
-        if (keywords && keywords.length > 0) {
-            const data = await res.json();
-            const rows = data.values || [];
-            // Check first few rows for headers
-            const foundHeaders = rows.some((row: string[]) => 
-                row.some(cell => {
-                    const norm = String(cell).toLowerCase();
-                    return keywords.some(k => norm.includes(k.toLowerCase()));
-                })
-            );
-            return foundHeaders ? true : 'missing_headers';
-        }
-
-        return true;
+        return res.ok;
     } catch (e) {
         console.warn(`Validation failed for '${tabName}':`, e);
         return false;

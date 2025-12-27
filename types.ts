@@ -156,6 +156,14 @@ export enum ViewState {
   TERMS = 'TERMS'
 }
 
+export enum TimeFocus {
+  MTD = 'MTD',
+  QTD = 'QTD',
+  YTD = 'YTD',
+  ROLLING_12M = 'ROLLING_12M',
+  FULL_YEAR = 'FULL_YEAR'
+}
+
 export type ExchangeRates = Record<string, number>;
 
 export interface TourStep {

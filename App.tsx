@@ -11,7 +11,7 @@ import { DataIngest } from './components/DataIngest';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { TermsOfService } from './components/TermsOfService';
 import { GuidedTour } from './components/GuidedTour';
-import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile, TourStep, TaxRecord, ArchiveMeta } from './types';
+import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile, TourStep, TaxRecord, ArchiveMeta, TimeFocus } from './types';
 import { fetchSheetData, fetchTabNames } from './services/sheetService';
 import { parseRawData } from './services/geminiService';
 import { fetchLiveRates } from './services/currencyService';
@@ -64,6 +64,7 @@ function App() {
   const [activeYear, setActiveYear] = useIndexedDB<number>('fintrack_active_year', new Date().getFullYear());
   const [selectedYear, setSelectedYear] = useState<number>(activeYear);
   const [discoveryAttempted, setDiscoveryAttempted] = useState<Record<number, boolean>>({});
+  const [timeFocus, setTimeFocus] = useState<TimeFocus>(TimeFocus.FULL_YEAR);
 
   useEffect(() => {
     setSelectedYear(activeYear);
@@ -275,7 +276,7 @@ function App() {
       <main className="flex-1 overflow-y-auto h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
         <div className="max-w-7xl mx-auto p-6 md:p-12 mb-20 md:mb-0 relative">
           
-          {/* Phase 4: Chronos Mode Banner - Visibility refined */}
+          {/* Chronos Mode Banner */}
           {showChronosBanner && (
               <div className="flex items-center justify-between mb-8 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl animate-in slide-in-from-top duration-500">
                   <div className="flex items-center gap-3">
@@ -324,7 +325,7 @@ function App() {
               </div>
           )}
 
-          {/* Phase 4: Discovery State (Loading vs Error vs Ready) */}
+          {/* Discovery State (Loading vs Error vs Ready) */}
           {isHistorical && (currentView === ViewState.DASHBOARD || currentView === ViewState.INCOME) && incomeData.length === 0 && (
                <div className="bg-white dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl p-16 flex flex-col items-center justify-center text-center space-y-6 animate-fade-in">
                    {isSyncing ? (
@@ -363,7 +364,20 @@ function App() {
           )}
 
           <div className={`${isHistorical && (currentView === ViewState.DASHBOARD || currentView === ViewState.INCOME) && incomeData.length === 0 ? 'hidden' : ''}`}>
-              {currentView === ViewState.DASHBOARD && <Dashboard assets={assets} netWorthHistory={netWorthHistory} incomeData={incomeData} expenseData={expenseData} isLoading={isSyncing} exchangeRates={exchangeRates} isDarkMode={isDarkMode} selectedYear={selectedYear} />}
+              {currentView === ViewState.DASHBOARD && (
+                  <Dashboard 
+                    assets={assets} 
+                    netWorthHistory={netWorthHistory} 
+                    incomeData={incomeData} 
+                    expenseData={expenseData} 
+                    isLoading={isSyncing} 
+                    exchangeRates={exchangeRates} 
+                    isDarkMode={isDarkMode} 
+                    selectedYear={selectedYear} 
+                    timeFocus={timeFocus}
+                    onTimeFocusChange={setTimeFocus}
+                  />
+              )}
               {currentView === ViewState.ASSETS && <AssetsList assets={assets} isLoading={isSyncing} exchangeRates={exchangeRates} onAddAsset={a => addAssetToSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, a).then(() => syncData(['assets']))} onEditAsset={a => handleEditGeneric(a, sheetConfig.tabNames.assets, updateAssetInSheet, setAssets)} onDeleteAsset={a => handleDeleteGeneric(a, sheetConfig.tabNames.assets, setAssets)} isReadOnly={false} />}
               {currentView === ViewState.INVESTMENTS && <InvestmentsList investments={calculatedInvestments} assets={assets} trades={trades} isLoading={isSyncing} exchangeRates={exchangeRates} />}
               {currentView === ViewState.TRADES && <TradesList trades={trades} isLoading={isSyncing} onAddTrade={t => addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, t).then(() => syncData(['trades']))} onEditTrade={t => handleEditGeneric(t, sheetConfig.tabNames.trades, updateTradeInSheet, setTrades)} onDeleteTrade={t => handleDeleteGeneric(t, sheetConfig.tabNames.trades, setTrades)} isReadOnly={false} />}

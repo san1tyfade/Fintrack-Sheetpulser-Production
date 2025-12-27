@@ -1,11 +1,12 @@
 
 import React, { useMemo, useState, memo } from 'react';
-import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry } from '../types';
+import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry, TimeFocus } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, BarChart, Bar, ReferenceLine } from 'recharts';
-import { ArrowUpRight, DollarSign, Wallet, X, Loader2, TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Lock } from 'lucide-react';
+import { ArrowUpRight, DollarSign, Wallet, X, Loader2, TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Lock, Calendar } from 'lucide-react';
 import { convertToBase, formatBaseCurrency, formatNativeCurrency, PRIMARY_CURRENCY } from '../services/currencyService';
 import { isSafeKey } from '../services/geminiService';
 import { isInvestmentAsset, isCashAsset } from '../services/classificationService';
+import { TimeFocusSelector } from './TimeFocusSelector';
 
 interface DashboardProps {
   assets: Asset[];
@@ -16,6 +17,8 @@ interface DashboardProps {
   exchangeRates?: ExchangeRates;
   isDarkMode?: boolean;
   selectedYear?: number;
+  timeFocus?: TimeFocus;
+  onTimeFocusChange?: (focus: TimeFocus) => void;
 }
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
@@ -28,6 +31,29 @@ const parseISOToLocal = (isoStr: string): Date => {
     const month = parseInt(parts[1], 10) - 1; 
     const day = parseInt(parts[2], 10);
     return new Date(year, month, day);
+};
+
+const isWithinFocus = (dateStr: string, focus: TimeFocus): boolean => {
+    const d = new Date(dateStr);
+    const now = new Date();
+    
+    switch (focus) {
+        case TimeFocus.MTD:
+            return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+        case TimeFocus.QTD:
+            const currentQuarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+            const quarterStart = new Date(now.getFullYear(), currentQuarterStartMonth, 1);
+            return d >= quarterStart;
+        case TimeFocus.YTD:
+            return d.getFullYear() === now.getFullYear();
+        case TimeFocus.ROLLING_12M:
+            const oneYearAgo = new Date();
+            oneYearAgo.setFullYear(now.getFullYear() - 1);
+            return d >= oneYearAgo;
+        case TimeFocus.FULL_YEAR:
+        default:
+            return true;
+    }
 };
 
 const StatsCard = memo(({ 
@@ -96,7 +122,21 @@ const StatsCard = memo(({
     );
 });
 
-const NetWorthChart = memo(({ data, isDarkMode, selectedYear, isHistorical }: { data: NetWorthEntry[], isDarkMode: boolean, selectedYear: number, isHistorical: boolean }) => {
+const NetWorthChart = memo(({ 
+    data, 
+    isDarkMode, 
+    selectedYear, 
+    isHistorical, 
+    timeFocus, 
+    onFocusChange 
+}: { 
+    data: NetWorthEntry[], 
+    isDarkMode: boolean, 
+    selectedYear: number, 
+    isHistorical: boolean, 
+    timeFocus: TimeFocus, 
+    onFocusChange?: (focus: TimeFocus) => void 
+}) => {
     const axisColor = isDarkMode ? '#94a3b8' : '#64748b';
     const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
     const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
@@ -104,8 +144,10 @@ const NetWorthChart = memo(({ data, isDarkMode, selectedYear, isHistorical }: { 
     const tooltipText = isDarkMode ? '#f1f5f9' : '#0f172a';
 
     const filteredData = useMemo(() => {
-        return data.filter(d => d.date.startsWith(String(selectedYear)));
-    }, [data, selectedYear]);
+        const yearFiltered = data.filter(d => d.date.startsWith(String(selectedYear)));
+        if (isHistorical || timeFocus === TimeFocus.FULL_YEAR) return yearFiltered;
+        return yearFiltered.filter(d => isWithinFocus(d.date, timeFocus));
+    }, [data, selectedYear, isHistorical, timeFocus]);
 
     const formatAxisDate = (str: string) => {
         const d = parseISOToLocal(str);
@@ -124,16 +166,21 @@ const NetWorthChart = memo(({ data, isDarkMode, selectedYear, isHistorical }: { 
     };
 
     return (
-        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[420px] shadow-sm transition-colors relative overflow-hidden">
-            {isHistorical && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] select-none">
-                    <span className="text-[120px] font-black tracking-tighter rotate-[-15deg]">ARCHIVE</span>
-                </div>
-            )}
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2 relative z-10">
-                <TrendingUp size={20} className="text-emerald-500 dark:text-emerald-400" />
-                Net Worth History ({selectedYear})
-            </h3>
+        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[480px] shadow-sm transition-colors relative overflow-hidden">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 relative z-10">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <TrendingUp size={20} className="text-emerald-500 dark:text-emerald-400" />
+                    Net Worth History
+                </h3>
+                {!isHistorical && onFocusChange && (
+                    <TimeFocusSelector current={timeFocus} onChange={onFocusChange} />
+                )}
+                {isHistorical && (
+                    <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 dark:bg-slate-700/50 rounded-lg text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                        <Calendar size={12} /> {selectedYear} ARCHIVE
+                    </div>
+                )}
+            </div>
             <div className="flex-1 w-full min-h-0 relative z-10">
                 {filteredData.length > 1 ? (
                     <ResponsiveContainer width="100%" height="100%">
@@ -187,8 +234,8 @@ const NetWorthChart = memo(({ data, isDarkMode, selectedYear, isHistorical }: { 
                 ) : (
                     <div className="h-full flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-xl bg-slate-50 dark:bg-slate-800/20">
                         <TrendingUp className="opacity-20 mb-3" size={48} />
-                        <p className="font-medium">Insufficient historical data for {selectedYear}.</p>
-                        <p className="text-xs mt-1 text-slate-600">Sync 'Net Worth Log' tab to view trends.</p>
+                        <p className="font-medium text-center px-4">No data points for selected focus window.</p>
+                        <p className="text-xs mt-1 text-slate-600 dark:text-slate-400">Try switching to 'ALL' or '12M'.</p>
                     </div>
                 )}
             </div>
@@ -372,7 +419,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     isLoading = false, 
     exchangeRates,
     isDarkMode = true,
-    selectedYear = new Date().getFullYear()
+    selectedYear = new Date().getFullYear(),
+    timeFocus = TimeFocus.FULL_YEAR,
+    onTimeFocusChange
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const isHistorical = selectedYear !== new Date().getFullYear();
@@ -464,7 +513,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <StatsCard title="Total Liquidity" value={totalCash} icon={Wallet} color="purple" isLoading={isLoading} isHistorical={isHistorical} />
         </div>
 
-        <NetWorthChart data={chartData} isDarkMode={isDarkMode} selectedYear={selectedYear} isHistorical={isHistorical} />
+        <NetWorthChart 
+            data={chartData} 
+            isDarkMode={isDarkMode} 
+            selectedYear={selectedYear} 
+            isHistorical={isHistorical}
+            timeFocus={timeFocus}
+            onFocusChange={onTimeFocusChange}
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">

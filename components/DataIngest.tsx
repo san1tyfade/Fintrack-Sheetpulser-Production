@@ -1,28 +1,15 @@
-import { AlertCircle, ArrowRight, Check, CheckCircle2, Cloud, DollarSign, Download, ExternalLink, FileSpreadsheet, History, Info, Layers, Loader2, LogOut, Moon, RefreshCw, Scale, Search, Shield, ShieldCheck, Sparkles, Sun, Trash2, CalendarDays, DownloadCloud, UploadCloud, Database, Clock, CloudUpload, CloudDownload, Box, HardDrive, Lock, Unlock, Zap, AlertTriangle, PartyPopper, Wand2, SearchX } from 'lucide-react';
+
+import { AlertCircle, ArrowRight, Check, CheckCircle2, Cloud, DollarSign, Download, ExternalLink, FileSpreadsheet, History, Info, Layers, Loader2, LogOut, Moon, RefreshCw, Scale, Search, Shield, ShieldCheck, Sparkles, Sun, Trash2, CalendarDays, DownloadCloud, UploadCloud, Database, Clock, CloudUpload, CloudDownload, Box, HardDrive, Lock, Unlock, Zap, AlertTriangle, PartyPopper } from 'lucide-react';
 import React, { memo, useEffect, useState, useRef } from 'react';
 import { fetchUserProfile, initGoogleAuth, signIn, copyMasterTemplate } from '../services/authService';
 import { openPicker } from '../services/pickerService';
-import { validateSheetTab, fetchTabNames } from '../services/sheetService';
+import { validateSheetTab } from '../services/sheetService';
 import { SheetConfig, UserProfile, ViewState, ArchiveMeta } from '../types';
 import { resetYearlyLedger } from '../services/sheetWriteService';
 import { exportBackup, importBackup, syncToCloud, restoreFromCloud, getArchiveManagementList, deleteLocalYear } from '../services/backupService';
 import { useIndexedDB } from '../hooks/useIndexedDB';
 
 const MASTER_TEMPLATE_ID = '12YnkmOuHSeiy5hcmbxc6ZT8e8D6ruo1SEr3LU3yEZDk'; 
-
-// Keyword map for auto-discovery
-const TAB_KEYWORDS: Record<string, string[]> = {
-    assets: ['asset', 'holding', 'balance', 'account'],
-    investments: ['investment', 'ticker', 'symbol', 'stock'],
-    trades: ['trade', 'transaction', 'history'],
-    subscriptions: ['subscription', 'recurring', 'burn', 'service'],
-    accounts: ['bank', 'account', 'institution'],
-    logData: ['log', 'worth', 'history', 'data'],
-    debt: ['debt', 'loan', 'liability', 'mortgage'],
-    income: ['income', 'ledger'],
-    expenses: ['expense', 'spending'],
-    taxAccounts: ['tax', 'tfsa', 'rrsp', 'fhsa']
-};
 
 interface DataIngestProps {
   config: SheetConfig;
@@ -45,22 +32,18 @@ interface DataIngestProps {
   onRolloverSuccess: (nextYear: number) => void;
 }
 
-const CompactTabInput = memo(({ label, value, onChange, onSync, sheetId, isSyncing, availableTabs }: any) => {
-  const [status, setStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid' | 'warning'>('idle');
+const CompactTabInput = memo(({ label, value, onChange, onSync, sheetId, isSyncing }: any) => {
+  const [status, setStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
 
   useEffect(() => {
     if (!sheetId || !value) return setStatus('idle');
     const timer = setTimeout(async () => {
       setStatus('checking');
-      const keywords = TAB_KEYWORDS[label] || [];
-      const validation = await validateSheetTab(sheetId, value, keywords);
-      
-      if (validation === true) setStatus('valid');
-      else if (validation === 'missing_headers') setStatus('warning');
-      else setStatus('invalid');
+      const isValid = await validateSheetTab(sheetId, value);
+      setStatus(isValid ? 'valid' : 'invalid');
     }, 800);
     return () => clearTimeout(timer);
-  }, [value, sheetId, label]);
+  }, [value, sheetId]);
 
   const displayLabel = label === 'taxAccounts' ? 'Tax Records' : label;
 
@@ -68,32 +51,21 @@ const CompactTabInput = memo(({ label, value, onChange, onSync, sheetId, isSynci
     <div className="flex flex-col gap-1.5 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700/50 hover:border-blue-400/30 transition-all group">
       <div className="flex justify-between items-center">
         <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider truncate mr-2 group-hover:text-blue-500 transition-colors">{displayLabel}</label>
-        <div className="flex items-center gap-1">
-            {isSyncing || status === 'checking' ? <Loader2 size={10} className="animate-spin text-blue-500" /> : 
-             status === 'valid' ? <CheckCircle2 size={10} className="text-emerald-500" title="Healthy: Tab & Headers Found" /> : 
-             status === 'warning' ? <AlertCircle size={10} className="text-amber-500" title="Warning: Tab found but standard headers missing" /> :
-             status === 'invalid' ? <SearchX size={10} className="text-red-500" title="Error: Tab not found" /> : null}
-        </div>
+        {isSyncing || status === 'checking' ? <Loader2 size={10} className="animate-spin" /> : 
+         status === 'valid' ? <CheckCircle2 size={10} className="text-emerald-500" /> : 
+         status === 'invalid' ? <AlertCircle size={10} className="text-red-500" /> : null}
       </div>
-      <div className="flex gap-1.5 relative">
-        <input 
-            type="text" 
-            list={`tabs-${label}`}
-            value={value} 
-            onChange={(e) => onChange(e.target.value)} 
-            className="flex-1 bg-transparent text-xs outline-none font-medium pr-6" 
-            placeholder="Select tab..."
-        />
-        <datalist id={`tabs-${label}`}>
-            {availableTabs.map((t: string) => <option key={t} value={t} />)}
-        </datalist>
-        <button onClick={onSync} disabled={isSyncing || !sheetId} className="absolute right-0 top-0 p-1 text-slate-400 hover:text-blue-500 disabled:opacity-30">
+      <div className="flex gap-1.5">
+        <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className="flex-1 bg-transparent text-xs outline-none font-medium" />
+        <button onClick={onSync} disabled={isSyncing || !sheetId} className="p-1.5 text-slate-400 hover:text-blue-500 disabled:opacity-30">
           <RefreshCw size={12} className={isSyncing ? "animate-spin" : ""} />
         </button>
       </div>
     </div>
   );
 });
+
+// --- Phase 1 & 3: Rollover Stepper Component ---
 
 const RolloverStepper = ({ 
     isOpen, 
@@ -140,6 +112,7 @@ const RolloverStepper = ({
         try {
             await resetYearlyLedger(sheetId, incomeTab, expenseTab);
             setStep('done');
+            // Notify parent that we are now in the next financial year
             onSuccess(nextYear);
         } catch (e: any) {
             alert(`Rollover failed: ${e.message}`);
@@ -151,6 +124,8 @@ const RolloverStepper = ({
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fade-in">
             <div className="bg-white dark:bg-slate-800 w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                 <div className="p-8 space-y-6">
+                    
+                    {/* Header */}
                     <div className="flex items-center gap-4">
                         <div className={`p-3 rounded-2xl ${step === 'done' ? 'bg-emerald-500 text-white' : 'bg-blue-600 text-white'}`}>
                             {step === 'done' ? <PartyPopper size={24} /> : <Zap size={24} />}
@@ -160,6 +135,8 @@ const RolloverStepper = ({
                             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Year-End Maintenance Wizard</p>
                         </div>
                     </div>
+
+                    {/* Progress indicator */}
                     <div className="flex gap-2">
                         {['syncing', 'confirm', 'rolling', 'done'].map((s, idx) => {
                             const isActive = step === s;
@@ -169,6 +146,7 @@ const RolloverStepper = ({
                             );
                         })}
                     </div>
+
                     <div className="py-4">
                         {step === 'init' && (
                             <div className="space-y-4">
@@ -180,6 +158,7 @@ const RolloverStepper = ({
                                 </button>
                             </div>
                         )}
+
                         {step === 'syncing' && (
                             <div className="flex flex-col items-center justify-center py-8 space-y-4">
                                 <Loader2 size={48} className="text-blue-500 animate-spin" />
@@ -187,6 +166,7 @@ const RolloverStepper = ({
                                 <p className="text-xs text-slate-500">Verifying local vault against Google Sheets</p>
                             </div>
                         )}
+
                         {step === 'confirm' && (
                             <div className="space-y-6">
                                 <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-2xl flex gap-3">
@@ -223,6 +203,7 @@ const RolloverStepper = ({
                                 </div>
                             </div>
                         )}
+
                         {step === 'rolling' && (
                             <div className="flex flex-col items-center justify-center py-8 space-y-4">
                                 <Loader2 size={48} className="text-emerald-500 animate-spin" />
@@ -230,6 +211,7 @@ const RolloverStepper = ({
                                 <p className="text-xs text-slate-500">Communicating with Google Sheets API</p>
                             </div>
                         )}
+
                         {step === 'done' && (
                             <div className="space-y-6 text-center py-4">
                                 <div className="w-20 h-20 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -254,6 +236,7 @@ const RolloverStepper = ({
 export const DataIngest: React.FC<DataIngestProps> = (props) => {
   const { config, onConfigChange, onSync, isSyncing, syncingTabs, syncStatus, sheetUrl, onSheetUrlChange, isDarkMode, toggleTheme, userProfile, onProfileChange, onSessionChange, onSignOut, onViewChange, onTourStart, activeYear, onRolloverSuccess } = props;
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [onboardingStatus, setOnboardingStatus] = useState<'idle' | 'cloning' | 'syncing' | 'complete' | 'error' | 'manual'>('idle');
   
   const [isBackingUp, setIsBackingUp] = useState(false);
@@ -261,9 +244,6 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
   const [localArchives, setLocalArchives] = useState<ArchiveMeta[]>([]);
   const [isLoadingArchives, setIsLoadingArchives] = useState(false);
   
-  const [availableTabs, setAvailableTabs] = useState<string[]>([]);
-  const [isFetchingTabs, setIsFetchingTabs] = useState(false);
-
   const [lastBackupAt, setLastBackupAt] = useIndexedDB<string | null>('fintrack_last_backup_at', null);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useIndexedDB<string | null>('fintrack_last_cloud_sync_at', null);
 
@@ -273,47 +253,13 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
 
   useEffect(() => {
     refreshArchives();
-    if (config.sheetId) {
-        refreshTabNamesList();
-    }
-  }, [activeYear, config.sheetId]);
+  }, [activeYear]);
 
   const refreshArchives = async () => {
     setIsLoadingArchives(true);
     const list = await getArchiveManagementList();
     setLocalArchives(list);
     setIsLoadingArchives(false);
-  };
-
-  const refreshTabNamesList = async () => {
-    if (!config.sheetId) return;
-    setIsFetchingTabs(true);
-    const names = await fetchTabNames(config.sheetId);
-    setAvailableTabs(names);
-    setIsFetchingTabs(false);
-  };
-
-  const handleAutoMap = () => {
-    if (!availableTabs.length) return;
-    
-    const newTabNames = { ...config.tabNames };
-    const entries = Object.entries(TAB_KEYWORDS);
-
-    // Heuristic: Best-fit matching
-    entries.forEach(([key, keywords]) => {
-        const found = availableTabs.find(tabName => {
-            const lowerTab = tabName.toLowerCase();
-            // Direct match
-            if (lowerTab === key.toLowerCase()) return true;
-            // Keyword match
-            return keywords.some(k => lowerTab.includes(k.toLowerCase()));
-        });
-        if (found) {
-            (newTabNames as any)[key] = found;
-        }
-    });
-
-    onConfigChange({ ...config, tabNames: newTabNames });
   };
 
   const handleSignIn = async () => {
@@ -352,10 +298,7 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
           const session = await signIn();
           onSessionChange(session);
           const result = await openPicker(config.clientId);
-          if (result) { 
-              onConfigChange({ ...config, sheetId: result.id }); 
-              onSheetUrlChange(result.url); 
-          }
+          if (result) { onConfigChange({ ...config, sheetId: result.id }); onSheetUrlChange(result.url); }
       } catch (e) { alert("Picker error"); }
   };
 
@@ -490,6 +433,7 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
         </div>
       </div>
 
+      {/* Phase 1 & 3: Year-End Maintenance */}
       <div className="bg-white dark:bg-slate-800 border-2 border-blue-500/20 dark:border-blue-500/10 rounded-3xl p-8 shadow-xl relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none group-hover:bg-blue-500/10 transition-all"></div>
           <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
@@ -509,6 +453,7 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
                   Close Financial Year {activeYear}
               </button>
           </div>
+
           <RolloverStepper 
               isOpen={isRolloverOpen} 
               onClose={() => setIsRolloverOpen(false)} 
@@ -524,6 +469,7 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
           />
       </div>
 
+      {/* Storage & Archive Management */}
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-6">
           <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-4">
               <div className="flex items-center gap-3">
@@ -535,6 +481,7 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
               </div>
               <button onClick={refreshArchives} className="p-2 text-slate-400 hover:text-blue-500 transition-colors"><RefreshCw size={14} className={isLoadingArchives ? "animate-spin" : ""} /></button>
           </div>
+          
           <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 dark:bg-slate-900/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -586,28 +533,16 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
           </div>
       </div>
 
-      {/* Tab Mappings Section with Magic Wand */}
+      {/* Tab Mappings */}
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-100 dark:border-slate-700 pb-4 gap-4">
+        <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-4">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-500 dark:text-indigo-400 border border-indigo-500/20"><Layers size={20} /></div>
-            <div>
-                <h3 className="text-sm font-bold">Tab Mappings</h3>
-                <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tight">Sheet Structure Setup</p>
-            </div>
+            <h3 className="text-sm font-bold">Tab Mappings</h3>
           </div>
-          <div className="flex items-center gap-2">
-            <button 
-                onClick={handleAutoMap} 
-                disabled={isSyncing || isFetchingTabs || !config.sheetId} 
-                className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all shadow-sm disabled:opacity-50"
-            >
-                {isFetchingTabs ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} Auto-Map
-            </button>
-            <button onClick={() => onSync()} disabled={isSyncing} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-500 shadow-lg disabled:opacity-50">
-                {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sync All
-            </button>
-          </div>
+          <button onClick={() => onSync()} disabled={isSyncing} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-500 shadow-lg disabled:opacity-50">
+            {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sync All Tabs
+          </button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
@@ -619,16 +554,7 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
               <div className="flex items-center gap-2 px-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><cat.i size={12} /> {cat.t}</div>
               <div className="space-y-2">
                 {cat.k.map(key => (
-                  <CompactTabInput 
-                    key={key} 
-                    label={key} 
-                    value={config.tabNames[key as keyof SheetConfig['tabNames']]} 
-                    onChange={(v: string) => onConfigChange({ ...config, tabNames: { ...config.tabNames, [key]: v } })} 
-                    onSync={() => onSync([key as any])} 
-                    sheetId={config.sheetId} 
-                    isSyncing={syncingTabs.has(key)} 
-                    availableTabs={availableTabs}
-                  />
+                  <CompactTabInput key={key} label={key} value={config.tabNames[key as keyof SheetConfig['tabNames']]} onChange={(v: string) => onConfigChange({ ...config, tabNames: { ...config.tabNames, [key]: v } })} onSync={() => onSync([key as any])} sheetId={config.sheetId} isSyncing={syncingTabs.has(key)} />
                 ))}
               </div>
             </div>
@@ -641,6 +567,7 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
         )}
       </div>
 
+      {/* Cloud & Local Portability */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/30 rounded-2xl p-6 shadow-sm">
             <div className="flex items-center gap-3 mb-6">
@@ -658,6 +585,7 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
                 </div>
             </div>
           </div>
+
           <div className="bg-indigo-50/50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30 rounded-2xl p-6 shadow-sm">
             <div className="flex items-center gap-3 mb-6">
                 <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-600 dark:text-indigo-400 border border-indigo-500/20"><Database size={20} /></div>
