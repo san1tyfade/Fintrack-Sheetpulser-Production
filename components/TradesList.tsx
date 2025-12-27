@@ -1,7 +1,12 @@
 
 import React, { useMemo, useState, memo } from 'react';
 import { Trade } from '../types';
-import { History, TrendingUp, TrendingDown, Search, X, Loader2, Calendar, DollarSign, Hash, Plus, Save, Trash2, Pencil } from 'lucide-react';
+import { 
+  History, TrendingUp, TrendingDown, Search, X, Loader2, 
+  Calendar, DollarSign, Hash, Plus, Save, Trash2, Pencil, 
+  ChevronDown, ChevronRight, Filter, List, LayoutGrid, Clock,
+  ArrowRightLeft, MinusCircle
+} from 'lucide-react';
 
 interface TradesListProps {
   trades: Trade[];
@@ -9,9 +14,10 @@ interface TradesListProps {
   onAddTrade: (trade: Trade) => Promise<void>;
   onEditTrade?: (trade: Trade) => Promise<void>;
   onDeleteTrade?: (trade: Trade) => Promise<void>;
-  // Added isReadOnly to fix TypeScript errors in App.tsx
   isReadOnly?: boolean;
 }
+
+type TradesViewMode = 'BY_ASSET' | 'RECENT_HISTORY';
 
 // --- Sub-Component: AddTradeModal ---
 
@@ -25,7 +31,6 @@ const AddTradeModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
         fee: 0
     });
     
-    // Load initial data when opening for edit
     React.useEffect(() => {
         if (isOpen && initialData) {
             setFormData({
@@ -37,7 +42,6 @@ const AddTradeModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
                 fee: initialData.fee || 0
             });
         } else if (isOpen && !initialData) {
-            // Reset if opening for Add
             setFormData({
                 date: new Date().toISOString().split('T')[0],
                 type: 'BUY',
@@ -54,8 +58,6 @@ const AddTradeModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
 
     if (!isOpen) return null;
 
-    // Standard total calculation: quantity * price + fee for BUY, quantity * price - fee for SELL
-    // Note: We use absolute values for display calculation
     const displayQty = Math.abs(formData.quantity || 0);
     const displayPrice = Math.abs(formData.price || 0);
     const displayFee = Math.abs(formData.fee || 0);
@@ -73,14 +75,11 @@ const AddTradeModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
         try {
             const rawQty = Math.abs(Number(formData.quantity));
             const isSell = formData.type === 'SELL';
-            
-            // Convention: SELL trades should have negative quantities in the spreadsheet
-            // to ensure they are correctly registered even if the 'Type' column mapping fails.
             const quantity = isSell ? -rawQty : rawQty;
             
             const newTrade: Trade = {
                 id: initialData?.id || crypto.randomUUID(),
-                rowIndex: initialData?.rowIndex, // Preserve row index for edits
+                rowIndex: initialData?.rowIndex,
                 date: formData.date!,
                 ticker: formData.ticker.toUpperCase(),
                 type: formData.type as 'BUY' | 'SELL',
@@ -99,46 +98,46 @@ const AddTradeModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
-                    <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
-                        {initialData ? <Pencil size={18} className="text-blue-500" /> : <Plus size={18} className="text-blue-500" />}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+                    <h3 className="font-black text-xl text-slate-900 dark:text-white flex items-center gap-3">
+                        {initialData ? <Pencil size={20} className="text-blue-500" /> : <Plus size={20} className="text-blue-500" />}
                         {initialData ? 'Edit Trade' : 'New Trade'}
                     </h3>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
-                        <X size={20} />
+                        <X size={24} />
                     </button>
                 </div>
                 
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <form onSubmit={handleSubmit} className="p-8 space-y-5">
                     {error && (
-                        <div className="p-3 bg-red-50 text-red-600 text-xs rounded-lg border border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20">
+                        <div className="p-4 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-100 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20">
                             {error}
                         </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
+                    <div className="grid grid-cols-2 gap-5">
+                        <div className="space-y-1.5">
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Trade Date</label>
                             <input 
                                 type="date" 
                                 value={formData.date}
                                 onChange={e => setFormData({...formData, date: e.target.value})}
-                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                             />
                         </div>
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Type</label>
+                        <div className="space-y-1.5">
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</label>
                             <div className="flex bg-slate-100 dark:bg-slate-900 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
                                 {['BUY', 'SELL'].map(t => (
                                     <button
                                         key={t}
                                         type="button"
                                         onClick={() => setFormData({...formData, type: t as any})}
-                                        className={`flex-1 text-xs font-bold py-1.5 rounded-lg transition-all ${
+                                        className={`flex-1 text-[10px] font-black py-2 rounded-lg transition-all tracking-widest ${
                                             formData.type === t 
-                                            ? (t === 'BUY' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-red-500 text-white shadow-sm')
+                                            ? (t === 'BUY' ? 'bg-emerald-500 text-white shadow-md' : 'bg-red-500 text-white shadow-md')
                                             : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                                         }`}
                                     >
@@ -149,231 +148,221 @@ const AddTradeModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
                         </div>
                     </div>
 
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ticker Symbol</label>
-                        <div className="relative">
-                            <input 
-                                type="text" 
-                                placeholder="e.g. AAPL, BTC, VFV"
-                                value={formData.ticker}
-                                onChange={e => setFormData({...formData, ticker: e.target.value.toUpperCase()})}
-                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-3 pr-3 py-2 text-sm font-bold tracking-wide outline-none focus:ring-2 focus:ring-blue-500 uppercase"
-                            />
-                        </div>
+                    <div className="space-y-1.5">
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Ticker Symbol</label>
+                        <input 
+                            type="text" 
+                            placeholder="e.g. AAPL, BTC, VFV"
+                            value={formData.ticker}
+                            onChange={e => setFormData({...formData, ticker: e.target.value.toUpperCase()})}
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-black tracking-widest outline-none focus:ring-2 focus:ring-blue-500 uppercase transition-all"
+                        />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Quantity</label>
+                    <div className="grid grid-cols-2 gap-5">
+                        <div className="space-y-1.5">
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Quantity</label>
                             <input 
                                 type="number" 
                                 placeholder="0.00"
                                 step="any"
                                 value={formData.quantity || ''}
                                 onChange={e => setFormData({...formData, quantity: parseFloat(e.target.value)})}
-                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Price per Unit</label>
+                        <div className="space-y-1.5">
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Price / Unit</label>
                             <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
                                 <input 
                                     type="number" 
                                     placeholder="0.00"
                                     step="any"
                                     value={formData.price || ''}
                                     onChange={e => setFormData({...formData, price: parseFloat(e.target.value)})}
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-6 pr-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-4 py-2.5 text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 items-end">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Fees (Optional)</label>
-                            <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
-                                <input 
-                                    type="number" 
-                                    placeholder="0.00"
-                                    step="any"
-                                    value={formData.fee || ''}
-                                    onChange={e => setFormData({...formData, fee: parseFloat(e.target.value)})}
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-6 pr-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                            </div>
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-700/50">
+                        <div className="space-y-1">
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Est. Total</label>
+                            <p className="text-lg font-black font-mono text-slate-900 dark:text-white">
+                                ${calculatedTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                            </p>
                         </div>
-                        <div className="bg-slate-100 dark:bg-slate-700/50 rounded-xl p-2 text-right">
-                             <span className="block text-[10px] text-slate-500 uppercase font-bold">Est. Total</span>
-                             <span className="font-mono font-bold text-lg text-slate-900 dark:text-white">
-                                 ${calculatedTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                             </span>
-                        </div>
+                        <button 
+                            type="submit" 
+                            disabled={isSubmitting}
+                            className="bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-[10px] tracking-widest px-8 py-4 rounded-2xl shadow-xl shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+                        >
+                            {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                            {isSubmitting ? 'Saving' : (initialData ? 'Update' : 'Confirm')}
+                        </button>
                     </div>
-
-                    <button 
-                        type="submit" 
-                        disabled={isSubmitting}
-                        className="w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                    >
-                        {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                        {isSubmitting ? 'Saving...' : (initialData ? 'Update Trade' : 'Save Transaction')}
-                    </button>
                 </form>
             </div>
         </div>
     );
 };
 
-// --- Sub-Component: TradeGroup (Memoized) ---
+// --- Sub-Component: Transaction Table (Shared) ---
 
-const TradeGroup = memo(({ ticker, trades, isLoading, onDelete, onEdit }: { ticker: string, trades: Trade[], isLoading: boolean, onDelete?: (t: Trade) => Promise<void>, onEdit: (t: Trade) => void }) => {
-    
+const TransactionTable = ({ trades, isLoading, onDelete, onEdit, isReadOnly, compact = false }: { 
+    trades: Trade[], 
+    isLoading: boolean, 
+    onDelete?: (t: Trade) => Promise<void>, 
+    onEdit: (t: Trade) => void,
+    isReadOnly: boolean,
+    compact?: boolean
+}) => {
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
-    const handleDeleteClick = async (trade: Trade) => {
-        if (!onDelete) return;
-        if (!confirm(`Are you sure you want to delete this ${trade.type} trade for ${trade.ticker}? This will remove the row from your Google Sheet.`)) return;
-        
+    const handleDelete = async (trade: Trade) => {
+        if (!onDelete || isReadOnly) return;
+        if (!confirm(`Permanently delete this ${trade.type} trade for ${trade.ticker}?`)) return;
         setDeletingId(trade.id);
-        try {
-            await onDelete(trade);
-        } catch (e: any) {
-            alert(e.message);
-        } finally {
-            setDeletingId(null);
-        }
+        try { await onDelete(trade); } catch (e: any) { alert(e.message); } finally { setDeletingId(null); }
     };
 
-    // Optimize stats calculation
+    return (
+        <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+                <thead>
+                    <tr className="bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-700">
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th>
+                        {!compact && <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Ticker</th>}
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Quantity</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Price</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Total</th>
+                        <th className="p-4 w-20 text-right"></th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                    {trades.map((trade) => {
+                        const isBuy = (trade.type || 'BUY').trim().toUpperCase() === 'BUY';
+                        const isDeleting = deletingId === trade.id;
+                        return (
+                            <tr key={trade.id} className="hover:bg-blue-500/5 transition-colors group/row tabular-nums">
+                                <td className="p-4 whitespace-nowrap text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">{trade.date}</td>
+                                {!compact && (
+                                    <td className="p-4 text-xs font-black text-slate-900 dark:text-white">{trade.ticker}</td>
+                                )}
+                                <td className="p-4">
+                                    <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-tighter ${
+                                        isBuy 
+                                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' 
+                                        : 'bg-red-500/10 text-red-500 dark:text-red-400'
+                                    }`}>
+                                        {isBuy ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                                        {trade.type}
+                                    </div>
+                                </td>
+                                <td className="p-4 text-right text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+                                    {Math.abs(trade.quantity).toLocaleString()}
+                                </td>
+                                <td className="p-4 text-right text-xs font-mono text-slate-400 dark:text-slate-500">
+                                    ${Math.abs(trade.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                                <td className="p-4 text-right text-xs font-mono font-black text-slate-900 dark:text-white">
+                                    ${Math.abs(trade.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                                <td className="p-4 text-right">
+                                    <div className="flex justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                        {!isReadOnly && (
+                                            <>
+                                                <button onClick={() => onEdit(trade)} className="p-1.5 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-blue-500/10"><Pencil size={14} /></button>
+                                                <button onClick={() => handleDelete(trade)} disabled={isDeleting} className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-500/10">
+                                                    {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+};
+
+// --- Sub-Component: Asset Summary Row (Accordion) ---
+
+const AssetGroup = memo(({ ticker, trades, isLoading, onDelete, onEdit, isReadOnly }: { ticker: string, trades: Trade[], isLoading: boolean, onDelete?: (t: Trade) => Promise<void>, onEdit: (t: Trade) => void, isReadOnly: boolean }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+
     const stats = useMemo(() => {
-        let boughtQty = 0;
-        let boughtCost = 0;
-        let soldQty = 0;
-
-        for (const t of trades) {
-            const qty = Math.abs(t.quantity || 0);
-            const total = Math.abs(t.total || 0);
-            const type = (t.type || 'BUY').toUpperCase().trim();
-
-            if (type === 'BUY') {
-                boughtQty += qty;
-                boughtCost += total;
-            } else {
-                soldQty += qty;
-            }
-        }
-
+        let bQty = 0, bCost = 0, sQty = 0;
+        trades.forEach(t => {
+            const q = Math.abs(t.quantity || 0);
+            const val = Math.abs(t.total || 0);
+            if (t.type === 'BUY') { bQty += q; bCost += val; }
+            else { sQty += q; }
+        });
+        const net = bQty - sQty;
         return {
-            avgBuyPrice: boughtQty > 0 ? boughtCost / boughtQty : 0,
-            netQuantity: boughtQty - soldQty
+            netQty: net,
+            avgCost: bQty > 0 ? bCost / bQty : 0,
+            totalInvested: bCost,
+            isExited: Math.abs(net) < 0.000001
         };
     }, [trades]);
 
     return (
-        <div className="space-y-3 animate-fade-in group">
-            <div className="flex items-center justify-between px-3 pt-3 pb-1 border-t border-slate-200 dark:border-slate-700/30 group-first:border-0">
-                <div className="flex items-center gap-3">
-                    <div className="bg-blue-500/10 p-2.5 rounded-xl text-blue-500 dark:text-blue-400 border border-blue-500/20">
-                        <History size={18} />
+        <div className={`bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-3xl overflow-hidden shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-600 ${stats.isExited ? 'opacity-60 grayscale-[0.5]' : ''}`}>
+            {/* Header Row */}
+            <button 
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="w-full flex items-center justify-between p-6 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
+            >
+                <div className="flex items-center gap-6">
+                    <div className="bg-slate-100 dark:bg-slate-900 p-3 rounded-2xl text-slate-400 border border-slate-200 dark:border-slate-700">
+                        {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
                     </div>
                     <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">{ticker}</h3>
-                        <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">{trades.length} Transactions</p>
+                        <div className="flex items-center gap-2">
+                            <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-widest">{ticker}</h3>
+                            {stats.isExited && <span className="text-[9px] font-black uppercase tracking-tighter bg-slate-200 dark:bg-slate-700 text-slate-500 px-2 py-0.5 rounded-full">Exited</span>}
+                        </div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">{trades.length} Transactions</p>
                     </div>
                 </div>
-                <div className="flex gap-6 text-sm text-right">
+
+                <div className="flex gap-12 text-right">
                     <div className="hidden sm:block">
-                        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">Avg. Buy</p>
-                        <div className="font-mono font-medium text-slate-700 dark:text-slate-300">
-                            {isLoading ? <div className="h-4 w-16 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse" /> : `$${stats.avgBuyPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                        </div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Net Position</p>
+                        <p className="font-mono font-black text-slate-900 dark:text-white">{stats.netQty.toLocaleString()} units</p>
                     </div>
-                    <div>
-                        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">Net Qty</p>
-                        <div className={`font-mono font-bold ${stats.netQuantity < 0 ? 'text-red-500 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                            {isLoading ? <div className="h-4 w-12 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse" /> : stats.netQuantity.toLocaleString()}
-                        </div>
+                    <div className="hidden sm:block">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Avg. Cost</p>
+                        <p className="font-mono font-black text-slate-900 dark:text-white">${stats.avgCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="hidden md:block">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Allocated</p>
+                        <p className="font-mono font-black text-emerald-600 dark:text-emerald-400">${stats.totalInvested.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
                     </div>
                 </div>
-            </div>
+            </button>
 
-            <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                                <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-32"><span className="flex items-center gap-1"><Calendar size={12}/> Date</span></th>
-                                <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-24">Type</th>
-                                <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right"><span className="flex items-center gap-1 justify-end"><Hash size={12}/> Qty</span></th>
-                                <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right"><span className="flex items-center gap-1 justify-end"><DollarSign size={12}/> Price</span></th>
-                                <th className="p-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Total Value</th>
-                                <th className="p-4 w-24 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                            {trades.map((trade) => {
-                                const isBuy = (trade.type || 'BUY').trim().toUpperCase() === 'BUY';
-                                const dateObj = new Date(trade.date);
-                                const dateDisplay = isNaN(dateObj.getTime()) ? trade.date : dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-                                const canEdit = trade.rowIndex !== undefined;
-                                const isDeleting = deletingId === trade.id;
-
-                                return (
-                                    <tr key={trade.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group/row">
-                                        <td className="p-4 text-slate-700 dark:text-slate-300 whitespace-nowrap text-sm font-medium">{dateDisplay}</td>
-                                        <td className="p-4">
-                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border ${
-                                                isBuy 
-                                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
-                                                : 'bg-red-500/10 text-red-500 dark:text-red-400 border-red-500/20'
-                                            }`}>
-                                                {isBuy ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                                                {trade.type}
-                                            </span>
-                                        </td>
-                                        <td className="p-4 text-right text-slate-700 dark:text-slate-300 font-mono text-sm">
-                                            {isLoading ? <div className="h-4 w-12 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse ml-auto" /> : Math.abs(trade.quantity).toLocaleString()}
-                                        </td>
-                                        <td className="p-4 text-right text-slate-500 dark:text-slate-400 font-mono text-sm group-hover/row:text-slate-900 dark:group-hover/row:text-white transition-colors">
-                                            {isLoading ? <div className="h-4 w-16 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse ml-auto" /> : `$${Math.abs(trade.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                                        </td>
-                                        <td className="p-4 text-right text-slate-900 dark:text-white font-bold font-mono text-sm">
-                                            {isLoading ? <div className="h-4 w-20 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse ml-auto" /> : `$${Math.abs(trade.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                                        </td>
-                                        <td className="p-4 text-right">
-                                            <div className="flex justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
-                                                {canEdit && (
-                                                     <button 
-                                                        onClick={() => onEdit(trade)}
-                                                        disabled={isDeleting || isLoading}
-                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors disabled:opacity-50"
-                                                        title="Edit Trade"
-                                                    >
-                                                        <Pencil size={14} />
-                                                    </button>
-                                                )}
-                                                {canEdit && onDelete && (
-                                                    <button 
-                                                        onClick={() => handleDeleteClick(trade)}
-                                                        disabled={isDeleting || isLoading}
-                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                                                        title="Delete Trade"
-                                                    >
-                                                        {isDeleting ? <Loader2 size={14} className="animate-spin text-red-500" /> : <Trash2 size={14} />}
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+            {/* Expanded Table */}
+            {isExpanded && (
+                <div className="border-t border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-900/20 animate-fade-in">
+                    <TransactionTable 
+                        trades={trades} 
+                        isLoading={isLoading} 
+                        onDelete={onDelete} 
+                        onEdit={onEdit} 
+                        isReadOnly={isReadOnly} 
+                        compact={true}
+                    />
                 </div>
-            </div>
+            )}
         </div>
     );
 });
@@ -386,76 +375,111 @@ export const TradesList: React.FC<TradesListProps> = ({
     onAddTrade, 
     onEditTrade, 
     onDeleteTrade,
-    // Destructured isReadOnly from props
     isReadOnly = false 
 }) => {
+  const [viewMode, setViewMode] = useState<TradesViewMode>('BY_ASSET');
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
 
-  // 1. Group trades by Ticker and sort within groups
-  const groupedTrades = useMemo(() => {
-    const groups: { [ticker: string]: Trade[] } = {};
-    
-    trades.forEach(trade => {
-      const ticker = (trade.ticker || 'UNKNOWN').toUpperCase();
-      if (!groups[ticker]) groups[ticker] = [];
-      groups[ticker].push(trade);
-    });
-
-    Object.values(groups).forEach(list => {
-        list.sort((a, b) => b.date.localeCompare(a.date));
-    });
-
-    return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+  // Stats for the header
+  const totalStats = useMemo(() => {
+    return {
+        totalTrades: trades.length,
+        uniqueAssets: new Set(trades.map(t => t.ticker)).size,
+        totalVolume: trades.reduce((acc, t) => acc + Math.abs(t.total), 0)
+    };
   }, [trades]);
 
-  // 2. Filter groups based on search
-  const filteredGroups = useMemo(() => {
-    if (!searchTerm) return groupedTrades;
-    const lowerTerm = searchTerm.toLowerCase();
-    return groupedTrades.filter(([ticker]) => ticker.toLowerCase().includes(lowerTerm));
-  }, [groupedTrades, searchTerm]);
+  // View Logic
+  const filteredAndGrouped = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+    
+    if (viewMode === 'RECENT_HISTORY') {
+        return [...trades]
+            .filter(t => t.ticker.toLowerCase().includes(term))
+            .sort((a, b) => b.date.localeCompare(a.date));
+    }
+
+    // Grouped by Asset
+    const groups: Record<string, Trade[]> = {};
+    trades.forEach(t => {
+        const ticker = (t.ticker || 'UNKNOWN').toUpperCase();
+        if (!groups[ticker]) groups[ticker] = [];
+        groups[ticker].push(t);
+    });
+
+    return Object.entries(groups)
+        .filter(([ticker]) => ticker.toLowerCase().includes(term))
+        .sort((a, b) => a[0].localeCompare(b[0]));
+  }, [trades, viewMode, searchTerm]);
 
   return (
     <div className="space-y-8 animate-fade-in pb-20">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div>
-          <div className="flex items-center gap-4">
-              <h2 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
-                Trades
-                {isLoading && <Loader2 className="animate-spin text-blue-500 dark:text-blue-400" size={24} />}
-              </h2>
-              {!isReadOnly && (
-                  <button 
-                    onClick={() => setIsAddModalOpen(true)}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5"
-                  >
-                      <Plus size={16} /> Add Trade
-                  </button>
-              )}
-          </div>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">Historical transaction log grouped by asset.</p>
+      {/* Sticky Top Header / Control Strip */}
+      <header className="sticky top-0 z-30 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-md pt-2 pb-6 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+                <h2 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter flex items-center gap-4">
+                    Trades
+                    <div className="flex gap-2">
+                        <span className="text-[10px] bg-blue-500/10 text-blue-500 px-3 py-1 rounded-full border border-blue-500/20 font-black uppercase tracking-widest">{totalStats.totalTrades} txs</span>
+                        <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-3 py-1 rounded-full border border-emerald-500/20 font-black uppercase tracking-widest">{totalStats.uniqueAssets} assets</span>
+                    </div>
+                </h2>
+                <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Audit trail and asset acquisition ledger.</p>
+            </div>
+
+            <div className="flex items-center gap-3">
+                <div className="bg-white dark:bg-slate-800 p-1 rounded-2xl border border-slate-200 dark:border-slate-700 flex shadow-sm">
+                    <button 
+                        onClick={() => setViewMode('BY_ASSET')}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${viewMode === 'BY_ASSET' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                    >
+                        <LayoutGrid size={14} /> By Asset
+                    </button>
+                    <button 
+                        onClick={() => setViewMode('RECENT_HISTORY')}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${viewMode === 'RECENT_HISTORY' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                    >
+                        <Clock size={14} /> Timeline
+                    </button>
+                </div>
+
+                {!isReadOnly && (
+                    <button 
+                        onClick={() => setIsAddModalOpen(true)}
+                        className="bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 text-white font-black uppercase text-[10px] tracking-widest px-6 py-4 rounded-2xl shadow-xl transition-all flex items-center gap-2"
+                    >
+                        <Plus size={16} /> New Trade
+                    </button>
+                )}
+            </div>
         </div>
-        
-        {/* Search Bar */}
-        <div className={`relative w-full md:w-72 transition-opacity duration-300 ${isLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-             <input
-                type="text"
-                placeholder="Search by ticker..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-10 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none w-full placeholder:text-slate-400 transition-all shadow-sm focus:shadow-md"
-             />
-             {searchTerm && (
-                 <button 
-                    onClick={() => setSearchTerm('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors bg-slate-100 dark:bg-slate-800 rounded-full p-0.5"
-                 >
-                     <X size={14} />
-                 </button>
-             )}
+
+        {/* Filter Strip */}
+        <div className="mt-6 flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input
+                    type="text"
+                    placeholder="Search tickers, dates, or actions..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-2xl pl-12 pr-10 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm"
+                />
+                {searchTerm && (
+                    <button onClick={() => setSearchTerm('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={16} /></button>
+                )}
+            </div>
+            <div className="flex gap-2">
+                <button className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl text-slate-500 hover:text-blue-500 shadow-sm transition-colors">
+                    <Filter size={18} />
+                </button>
+                <button className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl text-slate-500 hover:text-blue-500 shadow-sm transition-colors">
+                    <ArrowRightLeft size={18} />
+                </button>
+            </div>
         </div>
       </header>
 
@@ -464,46 +488,54 @@ export const TradesList: React.FC<TradesListProps> = ({
          initialData={editingTrade}
          onClose={() => { setIsAddModalOpen(false); setEditingTrade(null); }}
          onSave={async (trade) => {
-             if (editingTrade && onEditTrade) {
-                 await onEditTrade(trade);
-             } else {
-                 await onAddTrade(trade);
-             }
+             if (editingTrade && onEditTrade) await onEditTrade(trade);
+             else await onAddTrade(trade);
          }}
       />
 
-      <div className={`transition-all duration-500 space-y-8 ${isLoading ? 'opacity-70 pointer-events-none' : 'opacity-100'}`}>
-        {filteredGroups.map(([ticker, tickerTrades]) => (
-            <TradeGroup 
-                key={ticker} 
-                ticker={ticker} 
-                trades={tickerTrades} 
-                isLoading={isLoading} 
-                onDelete={onDeleteTrade}
-                onEdit={setEditingTrade}
-            />
-        ))}
+      <div className={`space-y-6 transition-all duration-500 ${isLoading ? 'opacity-60 grayscale pointer-events-none' : 'opacity-100'}`}>
+        
+        {viewMode === 'BY_ASSET' ? (
+            <div className="space-y-4">
+                {(filteredAndGrouped as [string, Trade[]][]).map(([ticker, tickerTrades]) => (
+                    <AssetGroup 
+                        key={ticker} 
+                        ticker={ticker} 
+                        trades={tickerTrades} 
+                        isLoading={isLoading} 
+                        onDelete={onDeleteTrade}
+                        onEdit={setEditingTrade}
+                        isReadOnly={isReadOnly}
+                    />
+                ))}
+            </div>
+        ) : (
+            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-3xl overflow-hidden shadow-sm">
+                <TransactionTable 
+                    trades={filteredAndGrouped as Trade[]} 
+                    isLoading={isLoading} 
+                    onDelete={onDeleteTrade}
+                    onEdit={setEditingTrade}
+                    isReadOnly={isReadOnly}
+                />
+            </div>
+        )}
 
         {trades.length === 0 && (
-            <div className="flex flex-col items-center justify-center p-12 text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-2xl bg-slate-50 dark:bg-slate-800/20">
-                <History size={48} className="opacity-20 mb-4" />
-                <p className="font-medium">No trade history found.</p>
-                <p className="text-sm mt-1">Import from Sheet or click "Add Trade".</p>
+            <div className="flex flex-col items-center justify-center py-24 text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-slate-50 dark:bg-slate-900/20">
+                <History size={64} className="opacity-10 mb-6" />
+                <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-widest">No Trade History</h3>
+                <p className="text-sm mt-2 opacity-60">Your acquisition trail will appear here after your first transaction.</p>
                 {!isReadOnly && (
-                    <button 
-                        onClick={() => setIsAddModalOpen(true)}
-                        className="mt-4 text-blue-500 hover:text-blue-600 font-bold text-sm"
-                    >
-                        + Create First Trade
-                    </button>
+                    <button onClick={() => setIsAddModalOpen(true)} className="mt-8 bg-blue-600 text-white font-black uppercase text-[10px] tracking-widest px-8 py-4 rounded-2xl shadow-xl shadow-blue-500/20 transition-all hover:-translate-y-1">Initialize Ledger</button>
                 )}
             </div>
         )}
 
-        {trades.length > 0 && filteredGroups.length === 0 && (
-            <div className="flex flex-col items-center justify-center p-12 text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-2xl">
-                <Search size={32} className="opacity-20 mb-3" />
-                <p>No results for "<span className="text-slate-700 dark:text-slate-300 font-semibold">{searchTerm}</span>"</p>
+        {trades.length > 0 && filteredAndGrouped.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+                <MinusCircle size={48} className="opacity-10 mb-4" />
+                <p className="font-bold text-sm uppercase tracking-widest">No matches for "{searchTerm}"</p>
             </div>
         )}
       </div>
