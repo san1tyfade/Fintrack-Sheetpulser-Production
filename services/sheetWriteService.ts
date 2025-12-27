@@ -5,16 +5,26 @@ import { Trade, Asset, Subscription, BankAccount, TaxRecord } from '../types';
 const BASE_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // Helper to normalize header strings for comparison
-const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+const normalize = (str: string) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 // --- Mapping Logic ---
 
+/**
+ * Sets a value in the correct column based on header keywords.
+ * Fix: Now normalizes the lookup keys as well to match normalized headers.
+ */
 const setCellValue = (row: any[], headers: string[], keys: string[], val: string | number | boolean) => {
-    const h = headers.map(normalize);
-    let idx = h.findIndex((header, i) => row[i] === null && keys.some(k => header === k));
+    const hNorm = headers.map(normalize);
+    const kNorm = keys.map(normalize);
+    
+    // First pass: look for exact normalized matches
+    let idx = hNorm.findIndex((header, i) => row[i] === null && kNorm.some(kn => header === kn));
+    
+    // Second pass: look for partial matches if no exact match found
     if (idx === -1) {
-        idx = h.findIndex((header, i) => row[i] === null && keys.some(k => header.includes(k)));
+        idx = hNorm.findIndex((header, i) => row[i] === null && kNorm.some(kn => header.includes(kn)));
     }
+    
     if (idx !== -1) {
          row[idx] = val;
     }
@@ -68,12 +78,22 @@ const mapAccountToRow = (acc: BankAccount, headers: string[]) => {
 
 const mapTaxRecordToRow = (record: TaxRecord, headers: string[]) => {
     const row = new Array(headers.length).fill(null);
-    setCellValue(row, headers, ['account type', 'record type', 'type', 'category'], record.recordType);
-    setCellValue(row, headers, ['account/fund', 'fund', 'account'], record.accountFund);
+    
+    // Explicit keywords matching your spreadsheet headers
+    // Priority 1: Account Type (Column A)
+    setCellValue(row, headers, ['account type', 'record type', 'type'], record.recordType);
+    
+    // Priority 2: Account/Fund (Fallback if Column A is differently named)
+    setCellValue(row, headers, ['account fund', 'fund', 'account'], record.accountFund);
+    
+    // Priority 3: Transaction Type (Matches '⟳ Transcation Type' in Column B)
+    // Note: 'transcation type' is included to handle the typo in the sheet.
     setCellValue(row, headers, ['transcation type', 'transaction type', 'trans type', 'action'], record.transactionType);
+    
     setCellValue(row, headers, ['date', 'time'], record.date);
     setCellValue(row, headers, ['value', 'amount'], record.value);
     setCellValue(row, headers, ['description', 'note', 'details'], record.description);
+    
     return row;
 };
 
@@ -141,15 +161,11 @@ const updateRowInSheet = async (sheetId: string, tabName: string, rowIndex: numb
 
 /**
  * Resets the yearly ledger by performing an atomic-like cloud mutation.
- * This function orchestrates the archiving of current tabs, scrubbing of active data,
- * and incrementing of year-based headers.
  */
 export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string, expenseTab: string) => {
     const token = getAccessToken();
     if (!token) throw new Error("Authentication required.");
 
-    // 1. Identify current year and calculate next year
-    // We read from the Income tab's header row (Row 3)
     const incomeHeaderRange = encodeURIComponent(`${incomeTab}!B3`);
     const headerRes = await fetch(`${BASE_URL}/${spreadsheetId}/values/${incomeHeaderRange}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -158,25 +174,20 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
     const headerData = await headerRes.json();
     const currentHeader = headerData.values?.[0]?.[0] || 'Jan-25';
     
-    // Extract year (e.g., from 'Jan-25' extract '25')
     const yearMatch = currentHeader.match(/-(\d{2,4})$/);
     const currentYearShort = yearMatch ? yearMatch[1] : String(new Date().getFullYear()).slice(-2);
     const currentYearFull = yearMatch ? (yearMatch[1].length === 2 ? 2000 + parseInt(yearMatch[1]) : parseInt(yearMatch[1])) : new Date().getFullYear();
     const nextYearFull = currentYearFull + 1;
     const nextYearShort = String(nextYearFull).slice(-2);
 
-    // 2. Capture current Summary Totals for the Archive (Snapshotting)
-    // On the Income tab, Row 6 usually contains the formula-based totals (B6:M6)
     const totalsRange = encodeURIComponent(`${incomeTab}!B6:M6`);
     const totalsRes = await fetch(`${BASE_URL}/${spreadsheetId}/values/${totalsRange}`, {
         headers: { Authorization: `Bearer ${token}` }
     });
     if (!totalsRes.ok) throw new Error("Phase 2: Failed to capture snapshot of current income totals.");
     const totalsData = await totalsRes.json();
-    // Default to zeroed array if no data found
     const incomeTotalsRow = totalsData.values || [new Array(12).fill(0)];
 
-    // 3. Structural Archive: Duplicate and Rename Sheets
     const incomeGridId = await getSheetGridId(spreadsheetId, incomeTab, token);
     const expenseGridId = await getSheetGridId(spreadsheetId, expenseTab, token);
 
@@ -195,14 +206,11 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
     });
     if (!structuralRes.ok) throw new Error("Phase 2: Structural update failed (Duplicating tabs).");
 
-    // 4. Archive Simplification: Modify the CLONED Income sheet
-    // We move the Snapshot totals to the top row (B4) and wipe detail breakdown on the ARCHIVE.
-    // This makes the archive a clean "sealed" record of the year's totals.
     const emptyDetailsRow = new Array(12).fill("");
     const archiveDataUpdates = [
-        { range: `${archivedIncomeName}!B4:M4`, values: incomeTotalsRow }, // Seal totals at top
-        { range: `${archivedIncomeName}!B5:M6`, values: [emptyDetailsRow, emptyDetailsRow] }, // Scrub archived details
-        { range: `${archivedIncomeName}!A4`, values: [['ANNUAL SNAPSHOT']] } // Relabel
+        { range: `${archivedIncomeName}!B4:M4`, values: incomeTotalsRow }, 
+        { range: `${archivedIncomeName}!B5:M6`, values: [emptyDetailsRow, emptyDetailsRow] }, 
+        { range: `${archivedIncomeName}!A4`, values: [['ANNUAL SNAPSHOT']] } 
     ];
 
     const archiveModRes = await fetch(`${BASE_URL}/${spreadsheetId}/values:batchUpdate`, {
@@ -215,26 +223,21 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
     });
     if (!archiveModRes.ok) throw new Error("Phase 2: Failed to simplify archived snapshot.");
 
-    // 5. Active Sheet Reset (The "Scrub" and "Header Increment")
-    // We clear the active transaction ranges and update the month headers to the new year.
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const nextYearHeaders = monthNames.map(m => `${m}-${nextYearShort}`);
     
-    // Clear ranges (keeping formulas intact by avoiding total rows)
     const emptyRow = new Array(12).fill("");
     const scrubRowsCount = 500; 
     const emptyLargeScrub = new Array(scrubRowsCount).fill(emptyRow);
     const emptySmallScrub = new Array(2).fill(emptyRow); 
 
     const activeSheetUpdates = [
-        // --- Income Tab Reset ---
-        { range: `${incomeTab}!B3:M3`, values: [nextYearHeaders] },      // Increment headers (Row 3)
-        { range: `${incomeTab}!B4:M5`, values: emptySmallScrub },        // Scrub top data section
-        { range: `${incomeTab}!B10:M${10 + scrubRowsCount}`, values: emptyLargeScrub }, // Scrub detailed section
+        { range: `${incomeTab}!B3:M3`, values: [nextYearHeaders] },      
+        { range: `${incomeTab}!B4:M5`, values: emptySmallScrub },        
+        { range: `${incomeTab}!B10:M${10 + scrubRowsCount}`, values: emptyLargeScrub }, 
 
-        // --- Expense Tab Reset ---
-        { range: `${expenseTab}!B6:M6`, values: [nextYearHeaders] },     // Increment headers (Row 6)
-        { range: `${expenseTab}!B7:M${7 + scrubRowsCount}`, values: emptyLargeScrub }    // Scrub all transaction data
+        { range: `${expenseTab}!B6:M6`, values: [nextYearHeaders] },     
+        { range: `${expenseTab}!B7:M${7 + scrubRowsCount}`, values: emptyLargeScrub }    
     ];
 
     const resetRes = await fetch(`${BASE_URL}/${spreadsheetId}/values:batchUpdate`, {
