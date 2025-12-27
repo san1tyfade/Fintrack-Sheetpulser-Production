@@ -1,9 +1,11 @@
 
 import React, { useMemo, useState, useEffect, memo } from 'react';
 import { Asset, ExchangeRates } from '../types';
-import { Filter, Loader2, Home, Wallet, Trash2, Plus, X, Save, Pencil } from 'lucide-react';
+import { Filter, Loader2, Home, Wallet, Trash2, Plus, X, Save, Pencil, Search, LayoutGrid, List, ArrowUpDown, Sparkles, TrendingUp, TrendingDown, Info, PieChart, ExternalLink, Globe } from 'lucide-react';
 import { convertToBase, formatBaseCurrency, formatNativeCurrency, PRIMARY_CURRENCY } from '../services/currencyService';
 import { isInvestmentAsset, isFixedAsset, isCashAsset, getAssetIcon } from '../services/classificationService';
+import { getMarketValuationLookup, MarketLookupResult } from '../services/geminiService';
+import { useIndexedDB } from '../hooks/useIndexedDB';
 
 interface AssetsListProps {
   assets: Asset[];
@@ -12,9 +14,85 @@ interface AssetsListProps {
   onAddAsset?: (asset: Asset) => Promise<void>;
   onEditAsset?: (asset: Asset) => Promise<void>;
   onDeleteAsset?: (asset: Asset) => Promise<void>;
-  // Added isReadOnly to fix TypeScript errors in App.tsx
   isReadOnly?: boolean;
+  isGhostMode?: boolean;
 }
+
+// --- Sub-Component: Market Lookup Modal ---
+
+const MarketLookupModal = ({ asset, isOpen, onClose }: { asset: Asset | null, isOpen: boolean, onClose: () => void }) => {
+    const [result, setResult] = useState<MarketLookupResult | null>(null);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (isOpen && asset && !result) {
+            setLoading(true);
+            getMarketValuationLookup(asset).then(res => {
+                setResult(res);
+                setLoading(false);
+            });
+        }
+    }, [isOpen, asset]);
+
+    if (!isOpen || !asset) return null;
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 w-full max-w-xl rounded-3xl shadow-2xl border border-blue-500/20 dark:border-blue-500/10 overflow-hidden">
+                <div className="p-8 space-y-6">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-2xl">
+                            <Globe size={28} className="animate-pulse" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-black text-slate-900 dark:text-white">Market Research</h3>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Real-time data for {asset.name}</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 min-h-[140px]">
+                        {loading ? (
+                            <div className="flex flex-col items-center justify-center h-full gap-3 py-6">
+                                <Loader2 className="animate-spin text-blue-500" size={32} />
+                                <p className="text-sm font-medium text-slate-500">Browsing real estate & auto portals...</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-sm">
+                                    {result?.text}
+                                </p>
+                                
+                                {result?.sources && result.sources.length > 0 && (
+                                    <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+                                        <p className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest">Market References</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {result.sources.map((source, idx) => (
+                                                <a 
+                                                    key={idx} 
+                                                    href={source.uri} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 hover:border-blue-400 transition-all shadow-sm"
+                                                >
+                                                    <ExternalLink size={12} />
+                                                    {source.title.length > 25 ? source.title.substring(0, 25) + '...' : source.title}
+                                                </a>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex gap-3">
+                        <button onClick={() => {setResult(null); onClose();}} className="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white font-bold py-4 rounded-2xl transition-all hover:bg-slate-200 dark:hover:bg-slate-600">Close Research</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // --- Sub-Component: AddAssetModal ---
 
@@ -28,7 +106,6 @@ const AddAssetModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Pre-fill form when editing
     useEffect(() => {
         if (isOpen && initialData) {
             setFormData({
@@ -56,7 +133,7 @@ const AddAssetModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
         try {
             const newAsset: Asset = {
                 id: initialData?.id || crypto.randomUUID(),
-                rowIndex: initialData?.rowIndex, // Preserve row index for updates
+                rowIndex: initialData?.rowIndex,
                 name: formData.name,
                 type: formData.type || 'Cash',
                 value: Number(formData.value),
@@ -165,50 +242,47 @@ const AddAssetModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
     );
 };
 
-// --- Sub-Component: AssetCard (Memoized) ---
+// --- Sub-Component: AssetCard (Gallery Mode) ---
 
-const AssetCard = memo(({ asset, exchangeRates, isLoading, onDelete, onEdit }: { 
+const AssetCard = memo(({ asset, exchangeRates, isLoading, onDelete, onEdit, onLookup }: { 
     asset: Asset, 
     exchangeRates?: ExchangeRates, 
     isLoading: boolean, 
     onDelete?: (a: Asset) => Promise<void>,
-    onEdit?: (a: Asset) => void
+    onEdit?: (a: Asset) => void,
+    onLookup: (a: Asset) => void
 }) => {
     const isForeign = asset.currency && asset.currency.toUpperCase() !== PRIMARY_CURRENCY;
     const baseValue = convertToBase(asset.value, asset.currency, exchangeRates);
     const [isDeleting, setIsDeleting] = useState(false);
     const canEdit = asset.rowIndex !== undefined;
+    const isSearchable = isFixedAsset(asset);
 
     const handleDelete = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!onDelete) return;
-        if (!confirm(`Are you sure you want to delete "${asset.name}"? This will remove the row from your Sheet.`)) return;
-        
+        if (!confirm(`Are you sure you want to delete "${asset.name}"?`)) return;
         setIsDeleting(true);
-        try {
-            await onDelete(asset);
-        } catch (e: any) {
-            alert(e.message);
-            setIsDeleting(false);
-        }
+        try { await onDelete(asset); } catch (e: any) { alert(e.message); setIsDeleting(false); }
     };
 
-    const handleEdit = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (onEdit) onEdit(asset);
-    };
-    
     return (
-    <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-6 hover:border-blue-400/50 transition-colors group animate-fade-in relative overflow-hidden flex flex-col justify-between h-full shadow-sm hover:shadow-md">
-        
-        {/* Actions (Visible on Hover) - Increased Z-Index to stay above currency badge */}
+    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 hover:border-blue-400/50 transition-all group animate-fade-in relative overflow-hidden flex flex-col justify-between h-full shadow-sm hover:shadow-md">
         <div className="absolute top-3 right-3 flex gap-1 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+            {isSearchable && (
+                <button 
+                    onClick={() => onLookup(asset)}
+                    className="p-1.5 rounded-lg text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors"
+                    title="Live Market Research"
+                >
+                    <Globe size={16} />
+                </button>
+            )}
             {canEdit && onEdit && (
                 <button 
-                    onClick={handleEdit}
+                    onClick={() => onEdit(asset)}
                     disabled={isDeleting || isLoading}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors disabled:opacity-50"
-                    title="Edit Asset"
                 >
                     <Pencil size={16} />
                 </button>
@@ -218,56 +292,42 @@ const AssetCard = memo(({ asset, exchangeRates, isLoading, onDelete, onEdit }: {
                     onClick={handleDelete}
                     disabled={isDeleting || isLoading}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                    title="Delete Asset"
                 >
-                    {isDeleting ? <Loader2 size={16} className="animate-spin text-red-500" /> : <Trash2 size={16} />}
+                    {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                 </button>
             )}
         </div>
 
         <div>
-            {isForeign && (
-                <div className="absolute top-0 right-0 px-2 py-1 bg-yellow-500/10 rounded-bl-lg border-l border-b border-yellow-500/20 z-10 pointer-events-none">
-                    <span className="text-[10px] font-bold text-yellow-600 dark:text-yellow-500">{asset.currency}</span>
-                </div>
-            )}
             <div className="flex justify-between items-start mb-4">
-                <div className="p-3 bg-slate-100 dark:bg-slate-700/50 rounded-lg group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white">
+                <div className="p-3 bg-slate-100 dark:bg-slate-700/50 rounded-xl">
                     {getAssetIcon(asset.type)}
                 </div>
-                <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 text-xs rounded-full uppercase tracking-wider font-semibold max-w-[120px] truncate text-right">
+                <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 text-[10px] rounded-full uppercase tracking-wider font-bold">
                     {asset.type}
                 </span>
             </div>
             
-            <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-1 truncate pr-6" title={asset.name}>{asset.name}</h3>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white truncate mb-1">{asset.name}</h3>
             
             <div className="flex items-baseline gap-2 mt-2">
-                {isLoading ? (
-                    <div className="h-9 w-32 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse my-0.5" />
-                ) : (
-                    <p className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
-                        {formatNativeCurrency(asset.value, asset.currency)}
-                    </p>
-                )}
+                <p className="text-2xl font-black text-slate-900 dark:text-white tracking-tight ghost-blur">
+                    {formatNativeCurrency(asset.value, asset.currency)}
+                </p>
             </div>
         </div>
 
         <div>
             {isForeign && (
-                <div className="text-sm text-emerald-600 dark:text-emerald-400 font-medium mt-1 min-h-[1.25rem]">
-                    {isLoading ? (
-                        <div className="h-4 w-24 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse" />
-                    ) : (
-                        `≈ ${formatBaseCurrency(baseValue)}`
-                    )}
+                <div className="text-xs text-emerald-600 dark:text-emerald-400 font-bold mt-1 ghost-blur">
+                    ≈ {formatBaseCurrency(baseValue)}
                 </div>
             )}
 
             {asset.lastUpdated && (
-                <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
-                     <p className="text-xs text-slate-500">Last Updated</p>
-                     <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">{asset.lastUpdated}</p>
+                <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between opacity-50">
+                     <p className="text-[10px] font-bold text-slate-500 uppercase">Last Updated</p>
+                     <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{asset.lastUpdated}</p>
                 </div>
             )}
         </div>
@@ -278,214 +338,213 @@ const AssetCard = memo(({ asset, exchangeRates, isLoading, onDelete, onEdit }: {
 // --- Main Component ---
 
 export const AssetsList: React.FC<AssetsListProps> = ({ 
-    assets, 
-    isLoading = false, 
-    exchangeRates, 
-    onAddAsset, 
-    onEditAsset, 
-    onDeleteAsset,
-    // Destructured isReadOnly from props
-    isReadOnly = false 
+    assets, isLoading = false, exchangeRates, onAddAsset, onEditAsset, onDeleteAsset, isReadOnly = false, isGhostMode = false 
 }) => {
   const [filterType, setFilterType] = useState<string>('All');
+  const [isTableView, setIsTableView] = useIndexedDB<boolean>('fintrack_assets_table_view', false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortKey, setSortKey] = useState<'value' | 'name' | 'type'>('value');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
+  const [researchingAsset, setResearchingAsset] = useState<Asset | null>(null);
 
-  const FILTER_OPTIONS = [
-    { id: 'All', label: 'All Assets' },
-    { id: 'Investment', label: 'Investments' },
-    { id: 'Property', label: 'Property & Vehicles' },
-    { id: 'Cash', label: 'Liquid Cash' },
-  ];
-
-  // 1. Calculate Global Stats (Always shows total portfolio value, regardless of filter)
-  const globalStats = useMemo(() => {
-      let fin = 0;
-      let fix = 0;
-      
-      assets.forEach(asset => {
-          const val = convertToBase(asset.value, asset.currency, exchangeRates);
-          if (isFixedAsset(asset)) fix += val;
-          else fin += val; // Financial = Cash + Investments
-      });
-
-      return {
-          financial: fin,
-          fixed: fix,
-          netWorth: fin + fix
-      };
-  }, [assets, exchangeRates]);
-
-  // 2. Filter and Split Assets for Display
-  const { visibleFinancial, visibleFixed } = useMemo(() => {
-    const fin: Asset[] = [];
-    const fix: Asset[] = [];
-
-    assets.forEach(asset => {
-        // Filter Check
-        let pass = false;
-        if (filterType === 'All') pass = true;
-        else if (filterType === 'Investment') pass = isInvestmentAsset(asset);
-        else if (filterType === 'Property') pass = isFixedAsset(asset);
-        else if (filterType === 'Cash') pass = isCashAsset(asset);
-
-        if (!pass) return;
-
-        // Grouping Check
-        if (isFixedAsset(asset)) {
-            fix.push(asset);
-        } else {
-            fin.push(asset);
-        }
+  const filteredAndSortedAssets = useMemo(() => {
+    let result = assets.filter(a => {
+        const matchesSearch = a.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                             a.type.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesFilter = filterType === 'All' || 
+                             (filterType === 'Investment' && isInvestmentAsset(a)) ||
+                             (filterType === 'Property' && isFixedAsset(a)) ||
+                             (filterType === 'Cash' && isCashAsset(a));
+        return matchesSearch && matchesFilter;
     });
 
-    return { visibleFinancial: fin, visibleFixed: fix };
-  }, [assets, filterType]);
+    return result.sort((a, b) => {
+        if (sortKey === 'value') return convertToBase(b.value, b.currency, exchangeRates) - convertToBase(a.value, a.currency, exchangeRates);
+        if (sortKey === 'name') return a.name.localeCompare(b.name);
+        return a.type.localeCompare(b.type);
+    });
+  }, [assets, searchTerm, filterType, sortKey, exchangeRates]);
+
+  const metrics = useMemo(() => {
+    let cash = 0, fixed = 0, total = 0;
+    assets.forEach(a => {
+        const val = convertToBase(a.value, a.currency, exchangeRates);
+        total += val;
+        if (isFixedAsset(a)) fixed += val;
+        else cash += val; // Liquid (Cash + Invest)
+    });
+    return { cash, fixed, total, liquidPct: total > 0 ? (cash / total) * 100 : 0 };
+  }, [assets, exchangeRates]);
 
   return (
-    <div className="space-y-8 animate-fade-in pb-20">
+    <div className={`space-y-8 animate-fade-in pb-20 ${isGhostMode ? 'ghost-mode-active' : ''}`}>
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div>
-           <div className="flex items-center gap-4">
-              <h2 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-4">
+              <h2 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
                 Assets
-                {isLoading && <Loader2 className="animate-spin text-blue-500 dark:text-blue-400" size={24} />}
+                {isLoading && <Loader2 className="animate-spin text-blue-500" size={24} />}
               </h2>
               {onAddAsset && !isReadOnly && (
-                  <button 
-                    onClick={() => setIsAddModalOpen(true)}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5"
-                  >
-                      <Plus size={16} /> Add Asset
+                  <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-2xl text-xs font-black shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5 active:scale-95">
+                      <Plus size={16} /> New Asset
                   </button>
               )}
           </div>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">Complete asset inventory valuation in {PRIMARY_CURRENCY}.</p>
+          <p className="text-slate-500 dark:text-slate-400 font-medium">Professional asset inventory & analysis.</p>
         </div>
-        
-        {/* Global Summary Cards */}
-        <div className="flex gap-4 overflow-x-auto pb-2 md:pb-0">
-             <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-5 py-3 rounded-xl text-right min-w-[160px] shadow-sm">
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold">Financial Assets</p>
-                <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400 flex justify-end mt-1">
-                    {isLoading ? <div className="h-7 w-28 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse" /> : formatBaseCurrency(globalStats.financial)}
-                </div>
+
+        {/* Analytics Strip */}
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-3xl flex items-center gap-6 shadow-sm min-w-[320px]">
+            <div className="shrink-0 w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                <PieChart size={24} />
             </div>
-            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-5 py-3 rounded-xl text-right min-w-[160px] shadow-sm">
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold">Property & Fixed</p>
-                <div className="text-xl font-bold text-blue-600 dark:text-blue-400 flex justify-end mt-1">
-                    {isLoading ? <div className="h-7 w-28 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse" /> : formatBaseCurrency(globalStats.fixed)}
+            <div className="flex-1 space-y-2">
+                <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                    <span>Liquidity Ratio</span>
+                    <span className="text-slate-900 dark:text-white">{metrics.liquidPct.toFixed(0)}% Liquid</span>
                 </div>
-            </div>
-             <div className="bg-slate-800 dark:bg-slate-800 border border-slate-700 dark:border-slate-700 px-5 py-3 rounded-xl text-right min-w-[160px] shadow-sm ring-1 ring-slate-600/50">
-                <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Total Net Worth</p>
-                <div className="text-xl font-bold text-white flex justify-end mt-1">
-                    {isLoading ? <div className="h-7 w-28 bg-slate-700/50 rounded animate-pulse" /> : formatBaseCurrency(globalStats.netWorth)}
+                <div className="h-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden flex">
+                    <div className="h-full bg-emerald-500" style={{ width: `${metrics.liquidPct}%` }} />
+                    <div className="h-full bg-blue-500" style={{ width: `${100 - metrics.liquidPct}%` }} />
                 </div>
             </div>
         </div>
       </header>
 
-      {/* Filter Controls */}
-      <div className={`flex flex-wrap gap-2 items-center bg-slate-100 dark:bg-slate-800/40 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700/50 w-fit transition-all duration-300 ${isLoading ? 'opacity-70 pointer-events-none' : 'opacity-100'}`}>
-          <div className="flex items-center gap-2 px-3 text-slate-500 text-xs font-bold uppercase tracking-wide">
-             <Filter size={14} /> Filter
+      {/* Control Bar */}
+      <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-slate-50 dark:bg-slate-800/40 p-4 rounded-3xl border border-slate-200 dark:border-slate-700/50">
+          <div className="flex flex-wrap gap-2 items-center">
+              <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input 
+                    type="text" 
+                    placeholder="Search assets..." 
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl pl-10 pr-4 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 w-48"
+                  />
+              </div>
+              <div className="h-6 w-[1px] bg-slate-200 dark:bg-slate-700 mx-2 hidden md:block" />
+              {['All', 'Investment', 'Property', 'Cash'].map(opt => (
+                  <button 
+                    key={opt}
+                    onClick={() => setFilterType(opt)}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filterType === opt ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-white dark:hover:bg-slate-800'}`}
+                  >
+                      {opt}
+                  </button>
+              ))}
           </div>
-          {FILTER_OPTIONS.map(opt => (
-              <button
-                key={opt.id}
-                onClick={() => setFilterType(opt.id)}
-                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                    filterType === opt.id 
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' 
-                    : 'text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-white'
-                 }`}
+
+          <div className="flex items-center gap-3">
+              <div className="flex bg-white dark:bg-slate-900 rounded-2xl p-1 border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <button onClick={() => setIsTableView(false)} className={`p-2 rounded-xl transition-all ${!isTableView ? 'bg-blue-500 text-white shadow-inner' : 'text-slate-400 hover:text-slate-600'}`}><LayoutGrid size={16} /></button>
+                  <button onClick={() => setIsTableView(true)} className={`p-2 rounded-xl transition-all ${isTableView ? 'bg-blue-500 text-white shadow-inner' : 'text-slate-400 hover:text-slate-600'}`}><List size={16} /></button>
+              </div>
+              <select 
+                value={sortKey} 
+                onChange={e => setSortKey(e.target.value as any)}
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-3 py-2 text-[10px] font-black uppercase tracking-widest outline-none focus:ring-2 focus:ring-blue-500"
               >
-                  {opt.label}
-              </button>
-          ))}
+                  <option value="value">Sort: Value</option>
+                  <option value="name">Sort: Name</option>
+                  <option value="type">Sort: Type</option>
+              </select>
+          </div>
       </div>
 
       <AddAssetModal 
          isOpen={isAddModalOpen || !!editingAsset} 
          initialData={editingAsset}
          onClose={() => { setIsAddModalOpen(false); setEditingAsset(null); }}
-         onSave={async (a) => {
-             if (editingAsset && onEditAsset) {
-                 await onEditAsset(a);
-             } else if (onAddAsset) {
-                 await onAddAsset(a);
-             }
-         }}
+         onSave={async (a) => editingAsset ? onEditAsset?.(a) : onAddAsset?.(a)}
       />
 
-      <div className="transition-all duration-500 space-y-10">
-        
-        {/* Fixed Assets Section */}
-        {visibleFixed.length > 0 && (
-            <section className="animate-fade-in">
-                <div className="flex items-center gap-3 mb-4 px-1">
-                    <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500 dark:text-blue-400">
-                        <Home size={20} />
-                    </div>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">Property & Fixed Assets</h3>
-                    <span className="text-xs font-mono text-slate-500 bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-300 dark:border-slate-700">
-                        {visibleFixed.length}
-                    </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {visibleFixed.map(asset => (
-                        <AssetCard 
-                            key={asset.id} 
-                            asset={asset} 
-                            isLoading={isLoading} 
-                            exchangeRates={exchangeRates} 
-                            onDelete={onDeleteAsset}
-                            onEdit={setEditingAsset}
-                        />
-                    ))}
-                </div>
-            </section>
+      <MarketLookupModal 
+        asset={researchingAsset}
+        // Fixed: Removed reference to undefined 'researchMode'
+        isOpen={!!researchingAsset}
+        onClose={() => setResearchingAsset(null)}
+      />
+
+      <div className="transition-all duration-500">
+        {/* Fixed: Removed reference to undefined 'researchMode' */}
+        {isTableView ? (
+            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-3xl overflow-hidden shadow-sm animate-fade-in">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                        <tr>
+                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Asset Name</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Native Value</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Value (CAD)</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                        {filteredAndSortedAssets.map(asset => {
+                            const baseVal = convertToBase(asset.value, asset.currency, exchangeRates);
+                            const canEdit = asset.rowIndex !== undefined;
+                            return (
+                                <tr key={asset.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="shrink-0 text-slate-400">{getAssetIcon(asset.type)}</div>
+                                            <span className="font-bold text-slate-900 dark:text-white">{asset.name}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-[9px] font-black uppercase tracking-tighter rounded-full text-slate-500">
+                                            {asset.type}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right font-mono text-xs text-slate-500 ghost-blur">
+                                        {formatNativeCurrency(asset.value, asset.currency)}
+                                    </td>
+                                    <td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white font-mono ghost-blur">
+                                        {formatBaseCurrency(baseVal)}
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {isFixedAsset(asset) && (
+                                                <button onClick={() => setResearchingAsset(asset)} className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg"><Globe size={14} /></button>
+                                            )}
+                                            {canEdit && (
+                                                <>
+                                                    <button onClick={() => setEditingAsset(asset)} className="p-1.5 text-slate-400 hover:text-blue-500"><Pencil size={14} /></button>
+                                                    <button onClick={() => onDeleteAsset?.(asset)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash2 size={14} /></button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {filteredAndSortedAssets.map(asset => (
+                    <AssetCard 
+                        key={asset.id} 
+                        asset={asset} 
+                        isLoading={isLoading} 
+                        exchangeRates={exchangeRates} 
+                        onDelete={onDeleteAsset}
+                        onEdit={setEditingAsset}
+                        onLookup={setResearchingAsset}
+                    />
+                ))}
+            </div>
         )}
 
-        {/* Financial Assets Section */}
-        {visibleFinancial.length > 0 && (
-            <section className="animate-fade-in">
-                <div className="flex items-center gap-3 mb-4 px-1">
-                     <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 dark:text-emerald-400">
-                        <Wallet size={20} />
-                    </div>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">Liquid & Financial Assets</h3>
-                    <span className="text-xs font-mono text-slate-500 bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-300 dark:border-slate-700">
-                        {visibleFinancial.length}
-                    </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {visibleFinancial.map(asset => (
-                        <AssetCard 
-                            key={asset.id} 
-                            asset={asset} 
-                            isLoading={isLoading} 
-                            exchangeRates={exchangeRates} 
-                            onDelete={onDeleteAsset}
-                            onEdit={setEditingAsset}
-                        />
-                    ))}
-                </div>
-            </section>
-        )}
-
-        {/* Empty State */}
-        {visibleFinancial.length === 0 && visibleFixed.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-2xl bg-slate-50 dark:bg-slate-800/10">
-                <Filter size={48} className="opacity-20 mb-4" />
-                <p className="font-medium">No assets match the selected filter.</p>
-                <button 
-                    onClick={() => setFilterType('All')}
-                    className="mt-4 text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 text-sm font-medium hover:underline"
-                >
-                    Clear Filter
-                </button>
+        {filteredAndSortedAssets.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-3xl bg-slate-50 dark:bg-slate-800/10">
+                <Search size={48} className="opacity-20 mb-4" />
+                <p className="font-black uppercase tracking-widest text-xs">No matching assets</p>
             </div>
         )}
       </div>

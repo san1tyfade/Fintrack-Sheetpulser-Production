@@ -75,6 +75,7 @@ function App() {
   const [userProfile, setUserProfile, profileLoaded] = useIndexedDB<UserProfile | null>('fintrack_user_profile', null);
   const [authSession, setAuthSession, sessionLoaded] = useIndexedDB<{token: string, expires: number} | null>('fintrack_auth_session', null);
   const [isDarkMode, setIsDarkMode] = useIndexedDB<boolean>('fintrack_dark_mode', true);
+  const [isGhostMode, setIsGhostMode] = useIndexedDB<boolean>('fintrack_ghost_mode', false);
   const [sheetUrl, setSheetUrl] = useIndexedDB<string>('fintrack_sheetUrl', '');
 
   // Year-Agnostic Data (Always Live)
@@ -111,6 +112,7 @@ function App() {
   }, [isDarkMode]);
 
   const toggleTheme = useCallback(() => setIsDarkMode(prev => !prev), [setIsDarkMode]);
+  const toggleGhostMode = useCallback(() => setIsGhostMode(prev => !prev), [setIsGhostMode]);
 
   const refreshArchiveMeta = async () => {
       const archives = await getArchiveManagementList();
@@ -244,7 +246,7 @@ function App() {
     setter(prev => prev.map(i => i.id === item.id ? item : i));
   }, [sheetConfig, selectedYear, activeYear]);
 
-  const handleSignOut = useCallback(() => { signOut(); setUserProfile(null); setAuthSession(null); setCurrentView(ViewState.SETTINGS); }, [setUserProfile, setAuthSession]);
+  const handleSignOut = useCallback(() => { signOut(); setUserProfile(null); setAuthSession(null); setCurrentView(ViewState.DASHBOARD); }, [setUserProfile, setAuthSession]);
 
   const handleRolloverSuccess = useCallback((nextYear: number) => {
       setActiveYear(nextYear);
@@ -271,8 +273,12 @@ function App() {
   const showChronosBanner = isHistorical && [ViewState.DASHBOARD, ViewState.INCOME].includes(currentView);
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen font-sans">
-      <Navigation currentView={currentView} setView={setCurrentView} onSync={() => syncData()} isSyncing={isSyncing} lastUpdated={lastUpdated} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
+    <div className={`flex flex-col md:flex-row min-h-screen font-sans ${isGhostMode ? 'ghost-mode-active' : ''}`}>
+      <Navigation 
+        currentView={currentView} setView={setCurrentView} onSync={() => syncData()} isSyncing={isSyncing} 
+        lastUpdated={lastUpdated} isDarkMode={isDarkMode} toggleTheme={toggleTheme} 
+        isGhostMode={isGhostMode} toggleGhostMode={toggleGhostMode}
+      />
       <main className="flex-1 overflow-y-auto h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
         <div className="max-w-7xl mx-auto p-6 md:p-12 mb-20 md:mb-0 relative">
           
@@ -367,6 +373,7 @@ function App() {
               {currentView === ViewState.DASHBOARD && (
                   <Dashboard 
                     assets={assets} 
+                    trades={trades}
                     netWorthHistory={netWorthHistory} 
                     incomeData={incomeData} 
                     expenseData={expenseData} 
@@ -378,7 +385,7 @@ function App() {
                     onTimeFocusChange={setTimeFocus}
                   />
               )}
-              {currentView === ViewState.ASSETS && <AssetsList assets={assets} isLoading={isSyncing} exchangeRates={exchangeRates} onAddAsset={a => addAssetToSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, a).then(() => syncData(['assets']))} onEditAsset={a => handleEditGeneric(a, sheetConfig.tabNames.assets, updateAssetInSheet, setAssets)} onDeleteAsset={a => handleDeleteGeneric(a, sheetConfig.tabNames.assets, setAssets)} isReadOnly={false} />}
+              {currentView === ViewState.ASSETS && <AssetsList assets={assets} isLoading={isSyncing} exchangeRates={exchangeRates} onAddAsset={a => addAssetToSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, a).then(() => syncData(['assets']))} onEditAsset={a => handleEditGeneric(a, sheetConfig.tabNames.assets, updateAssetInSheet, setAssets)} onDeleteAsset={a => handleDeleteGeneric(a, sheetConfig.tabNames.assets, setAssets)} isReadOnly={false} isGhostMode={isGhostMode} />}
               {currentView === ViewState.INVESTMENTS && <InvestmentsList investments={calculatedInvestments} assets={assets} trades={trades} isLoading={isSyncing} exchangeRates={exchangeRates} />}
               {currentView === ViewState.TRADES && <TradesList trades={trades} isLoading={isSyncing} onAddTrade={t => addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, t).then(() => syncData(['trades']))} onEditTrade={t => handleEditGeneric(t, sheetConfig.tabNames.trades, updateTradeInSheet, setTrades)} onDeleteTrade={t => handleDeleteGeneric(t, sheetConfig.tabNames.trades, setTrades)} isReadOnly={false} />}
               {currentView === ViewState.INCOME && <IncomeView incomeData={incomeData} expenseData={expenseData} detailedExpenses={detailedExpenses} detailedIncome={detailedIncome} isLoading={isSyncing} isDarkMode={isDarkMode} isReadOnly={isHistorical} selectedYear={selectedYear} onUpdateExpense={async (cat, sub, m, v) => { await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.expenses, cat, sub, m, v); syncData(['expenses']); }} onUpdateIncome={async (cat, sub, m, v) => { await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.income, cat, sub, m, v); syncData(['income']); }} />}
@@ -389,6 +396,12 @@ function App() {
           </div>
         </div>
       </main>
+      <style>{`
+        .ghost-mode-active .ghost-blur {
+          filter: blur(5px);
+          transition: filter 0.3s ease;
+        }
+      `}</style>
       {isTourActive && <GuidedTour steps={TOUR_STEPS} onComplete={() => { setIsTourActive(false); setHasCompletedTour(true); }} onStepChange={(view) => setCurrentView(view)} />}
     </div>
   );

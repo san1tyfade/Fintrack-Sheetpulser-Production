@@ -173,6 +173,14 @@ export interface TourStep {
   view: ViewState;
 }
 
+export interface AttributionResult {
+  startValue: number;
+  endValue: number;
+  netContributions: number;
+  marketGain: number;
+  percentageReturn: number;
+}
+
 /** 
  * Phase 3: Storage & Migration Types
  */

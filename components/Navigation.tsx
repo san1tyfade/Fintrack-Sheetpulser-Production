@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { ViewState } from '../types';
-import { LayoutDashboard, Wallet, TrendingUp, History, Settings, RefreshCw, Clock, Info, Banknote } from 'lucide-react';
+import { LayoutDashboard, Wallet, TrendingUp, History, Settings, RefreshCw, Clock, Info, Banknote, Eye, EyeOff } from 'lucide-react';
 
 interface NavigationProps {
   currentView: ViewState;
@@ -11,9 +11,13 @@ interface NavigationProps {
   lastUpdated: Date | null;
   isDarkMode: boolean;
   toggleTheme: () => void;
+  isGhostMode: boolean;
+  toggleGhostMode: () => void;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({ currentView, setView, onSync, isSyncing, lastUpdated }) => {
+export const Navigation: React.FC<NavigationProps> = ({ 
+  currentView, setView, onSync, isSyncing, lastUpdated, isGhostMode, toggleGhostMode 
+}) => {
   const navItems = [
     { id: ViewState.DASHBOARD, label: 'Dashboard', icon: LayoutDashboard, targetId: 'nav-dashboard' },
     { id: ViewState.ASSETS, label: 'Assets', icon: Wallet, targetId: 'nav-assets' },
@@ -55,8 +59,15 @@ export const Navigation: React.FC<NavigationProps> = ({ currentView, setView, on
             );
             })}
             
-            {/* Mobile Actions (Sync) */}
-             <div className="md:hidden flex items-center px-2">
+            {/* Mobile Actions (Sync + Ghost) */}
+             <div className="md:hidden flex items-center px-2 space-x-2">
+                 <button 
+                    onClick={toggleGhostMode}
+                    className="p-2 rounded-xl text-slate-500 dark:text-slate-400"
+                    title={isGhostMode ? "Disable Privacy Mode" : "Enable Privacy Mode"}
+                 >
+                    {isGhostMode ? <EyeOff size={20} /> : <Eye size={20} />}
+                 </button>
                  <button
                     onClick={onSync}
                     disabled={isSyncing}
@@ -70,8 +81,16 @@ export const Navigation: React.FC<NavigationProps> = ({ currentView, setView, on
         </div>
       </div>
 
-      {/* Sync Status / Manual Refresh (Desktop) */}
+      {/* Footer Actions (Desktop) */}
       <div className="hidden md:block p-4 border-t border-slate-200 dark:border-slate-700/50 space-y-3">
+        <button 
+            onClick={toggleGhostMode}
+            className={`w-full flex items-center justify-center space-x-2 p-3 rounded-lg text-sm font-medium transition-all
+            ${isGhostMode ? 'bg-amber-100 dark:bg-amber-600/20 text-amber-600 dark:text-amber-400' : 'bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-400'}`}
+        >
+            {isGhostMode ? <EyeOff size={16} /> : <Eye size={16} />}
+            <span>{isGhostMode ? "Privacy Mode ON" : "Privacy Mode OFF"}</span>
+        </button>
         <button 
             id="desktop-sync-btn"
             onClick={onSync}

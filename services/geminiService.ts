@@ -1,5 +1,60 @@
 
+import { GoogleGenAI } from "@google/genai";
 import { Asset, Investment, Trade, Subscription, BankAccount, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, LedgerData, LedgerCategory, LedgerItem, TaxRecord } from "../types";
+
+// Initialize AI
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+export interface MarketLookupResult {
+    text: string;
+    sources: { title: string; uri: string }[];
+}
+
+/**
+ * Uses Google Search Grounding to find real-world market data for assets.
+ * Specifically targets Zillow, Redfin, KBB, etc.
+ */
+export const getMarketValuationLookup = async (asset: Asset): Promise<MarketLookupResult> => {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `Search for the current market value of this asset: "${asset.name}". 
+            If it is a property, prioritize data from Zillow, Redfin, or Realtor.com. 
+            If it is a vehicle, prioritize data from Kelley Blue Book (KBB) or AutoTrader.
+            Provide a concise summary of the current price range found.`,
+            config: {
+                tools: [{ googleSearch: {} }]
+            }
+        });
+
+        const text = response.text || "No market data found.";
+        const sources: { title: string; uri: string }[] = [];
+
+        // Extract grounding sources as required by Gemini rules
+        const chunks = response.candidates?.[0]?.groundingMetadata?.searchEntryPoint?.renderedContent;
+        // In some SDK versions, chunks are in groundingMetadata.groundingChunks
+        const metadataChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+
+        if (metadataChunks) {
+            metadataChunks.forEach((chunk: any) => {
+                if (chunk.web && chunk.web.uri) {
+                    sources.push({
+                        title: chunk.web.title || "Market Source",
+                        uri: chunk.web.uri
+                    });
+                }
+            });
+        }
+
+        return { text, sources };
+    } catch (e) {
+        console.error("Market Lookup Error:", e);
+        return { 
+            text: "Market lookup currently unavailable. Check your connection or API limits.", 
+            sources: [] 
+        };
+    }
+};
 
 // --- Utilities ---
 

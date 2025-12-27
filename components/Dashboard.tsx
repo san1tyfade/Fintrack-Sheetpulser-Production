@@ -1,15 +1,17 @@
 
 import React, { useMemo, useState, memo } from 'react';
-import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry, TimeFocus } from '../types';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, BarChart, Bar, ReferenceLine } from 'recharts';
-import { ArrowUpRight, DollarSign, Wallet, X, Loader2, TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Lock, Calendar } from 'lucide-react';
+import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry, TimeFocus, Trade } from '../types';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, BarChart, Bar, ReferenceLine, Line } from 'recharts';
+import { ArrowUpRight, DollarSign, Wallet, X, Loader2, TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Lock, Calendar, PiggyBank, BarChart3, Info, ArrowRight, Minus } from 'lucide-react';
 import { convertToBase, formatBaseCurrency, formatNativeCurrency, PRIMARY_CURRENCY } from '../services/currencyService';
 import { isSafeKey } from '../services/geminiService';
 import { isInvestmentAsset, isCashAsset } from '../services/classificationService';
 import { TimeFocusSelector } from './TimeFocusSelector';
+import { calculateAttribution } from '../services/portfolioService';
 
 interface DashboardProps {
   assets: Asset[];
+  trades?: Trade[];
   netWorthHistory?: NetWorthEntry[];
   incomeData?: IncomeEntry[];
   expenseData?: ExpenseEntry[];
@@ -21,7 +23,7 @@ interface DashboardProps {
   onTimeFocusChange?: (focus: TimeFocus) => void;
 }
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f97316'];
 
 const parseISOToLocal = (isoStr: string): Date => {
     if (!isoStr) return new Date();
@@ -122,32 +124,192 @@ const StatsCard = memo(({
     );
 });
 
+const WealthDriversCard = memo(({ 
+    attribution, 
+    isLoading,
+    timeFocus
+}: { 
+    attribution: any, 
+    isLoading: boolean,
+    timeFocus: TimeFocus
+}) => {
+    const isGain = attribution.marketGain >= 0;
+    const isContributionPositive = attribution.netContributions >= 0;
+    
+    // Clean up the text by replacing underscores with spaces
+    const cleanFocus = timeFocus.replace(/_/g, ' ');
+
+    // Calculate visualization segments
+    // We normalize everything against the highest absolute value to ensure consistent layout
+    const maxReference = Math.max(attribution.startValue + Math.abs(attribution.netContributions) + Math.abs(attribution.marketGain), attribution.endValue, 1);
+    
+    const startW = (attribution.startValue / maxReference) * 100;
+    const savingsW = (Math.abs(attribution.netContributions) / maxReference) * 100;
+    const gainW = (Math.abs(attribution.marketGain) / maxReference) * 100;
+
+    return (
+        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 backdrop-blur-sm shadow-sm flex flex-col h-full group hover:border-blue-400/20 transition-all">
+            <div className="flex justify-between items-center mb-8">
+                <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <BarChart3 size={20} className="text-blue-500" />
+                        Wealth Drivers
+                    </h3>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">
+                        Source of Growth
+                    </p>
+                </div>
+                <div className="px-3 py-1 bg-slate-100 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <span className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">
+                        {cleanFocus}
+                    </span>
+                </div>
+            </div>
+
+            <div className="space-y-8 flex-1">
+                {/* Visual Waterfall-style Bar */}
+                <div className="space-y-3">
+                    <div className="flex justify-between items-end">
+                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Asset Distribution</span>
+                        <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${isGain ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'}`}>
+                            {isGain ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
+                            {isGain ? '+' : ''}{attribution.percentageReturn.toFixed(1)}% Return
+                        </div>
+                    </div>
+                    <div className="h-6 w-full bg-slate-100 dark:bg-slate-900/50 rounded-xl overflow-hidden flex shadow-inner border border-slate-200/50 dark:border-slate-700/50">
+                        <div 
+                            className="h-full bg-blue-500/90 transition-all duration-1000 relative group/seg border-r border-white/10" 
+                            style={{ width: `${Math.max(2, startW)}%` }}
+                        >
+                             <div className="absolute inset-0 bg-white/10 opacity-0 group-hover/seg:opacity-100 transition-opacity" />
+                        </div>
+                        <div 
+                            className={`h-full transition-all duration-1000 relative group/seg border-r border-white/10 ${isContributionPositive ? 'bg-indigo-500/90' : 'bg-rose-500/90'}`}
+                            style={{ width: `${Math.max(2, savingsW)}%` }}
+                        >
+                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover/seg:opacity-100 transition-opacity" />
+                        </div>
+                        <div 
+                            className={`h-full transition-all duration-1000 relative group/seg ${isGain ? 'bg-emerald-500/90' : 'bg-red-500/90'}`}
+                            style={{ width: `${Math.max(2, gainW)}%` }}
+                        >
+                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover/seg:opacity-100 transition-opacity" />
+                        </div>
+                    </div>
+                    <div className="flex gap-4 justify-start px-1">
+                        <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-sm bg-blue-500" /><span className="text-[9px] font-black text-slate-400 uppercase">Base</span></div>
+                        <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-sm bg-indigo-500" /><span className="text-[9px] font-black text-slate-400 uppercase">Savings</span></div>
+                        <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-sm bg-emerald-500" /><span className="text-[9px] font-black text-slate-400 uppercase">Growth</span></div>
+                    </div>
+                </div>
+
+                {/* Primary Metrics */}
+                <div className="grid grid-cols-1 gap-5">
+                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800/50 group/row hover:bg-slate-100 dark:hover:bg-slate-900/50 transition-colors">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-indigo-500/10 text-indigo-500 rounded-xl group-hover/row:scale-110 transition-transform">
+                                <PiggyBank size={18} />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest leading-none mb-1">New Savings</p>
+                                <p className="text-xs font-bold text-slate-500">From Cash Flow</p>
+                            </div>
+                        </div>
+                        <p className={`text-lg font-black font-mono ${isContributionPositive ? 'text-slate-900 dark:text-white' : 'text-red-500'}`}>
+                            {isLoading ? '---' : formatBaseCurrency(attribution.netContributions)}
+                        </p>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800/50 group/row hover:bg-slate-100 dark:hover:bg-slate-900/50 transition-colors">
+                        <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-xl group-hover/row:scale-110 transition-transform ${isGain ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                                <TrendingUp size={18} />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest leading-none mb-1">Market Gain</p>
+                                <p className="text-xs font-bold text-slate-500">Capital Impact</p>
+                            </div>
+                        </div>
+                        <p className={`text-lg font-black font-mono ${isGain ? 'text-emerald-600' : 'text-red-600'}`}>
+                            {isLoading ? '---' : (isGain ? '+' : '') + formatBaseCurrency(attribution.marketGain)}
+                        </p>
+                    </div>
+                </div>
+
+                <div className="pt-6 border-t border-slate-100 dark:border-slate-800/50">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2 group/info relative">
+                            <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Initial Capital</span>
+                            <Info size={10} className="text-slate-300 cursor-help" />
+                            <div className="absolute bottom-full mb-3 left-0 w-56 p-3 bg-slate-900 text-white text-[10px] leading-relaxed rounded-xl opacity-0 group-hover/info:opacity-100 pointer-events-none transition-all shadow-2xl z-50 translate-y-2 group-hover/info:translate-y-0">
+                                Your total wealth at the anchor date ({cleanFocus}). All subsequent changes are measured against this baseline.
+                            </div>
+                        </div>
+                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 font-mono">
+                            {isLoading ? '---' : formatBaseCurrency(attribution.startValue)}
+                        </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                         <span className="text-[10px] font-black uppercase text-slate-900 dark:text-white tracking-widest">Ending Balance</span>
+                         <span className="text-sm font-black text-slate-900 dark:text-white font-mono">
+                            {isLoading ? '---' : formatBaseCurrency(attribution.endValue)}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+});
+
 const NetWorthChart = memo(({ 
     data, 
     isDarkMode, 
     selectedYear, 
     isHistorical, 
     timeFocus, 
-    onFocusChange 
+    onFocusChange,
+    incomeData = [],
+    expenseData = [],
+    startValue = 0
 }: { 
     data: NetWorthEntry[], 
     isDarkMode: boolean, 
     selectedYear: number, 
     isHistorical: boolean, 
     timeFocus: TimeFocus, 
-    onFocusChange?: (focus: TimeFocus) => void 
+    onFocusChange?: (focus: TimeFocus) => void,
+    incomeData: IncomeEntry[],
+    expenseData: ExpenseEntry[],
+    startValue: number
 }) => {
     const axisColor = isDarkMode ? '#94a3b8' : '#64748b';
     const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
     const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
     const tooltipBorder = isDarkMode ? '#334155' : '#cbd5e1';
-    const tooltipText = isDarkMode ? '#f1f5f9' : '#0f172a';
 
     const filteredData = useMemo(() => {
         const yearFiltered = data.filter(d => d.date.startsWith(String(selectedYear)));
-        if (isHistorical || timeFocus === TimeFocus.FULL_YEAR) return yearFiltered;
-        return yearFiltered.filter(d => isWithinFocus(d.date, timeFocus));
-    }, [data, selectedYear, isHistorical, timeFocus]);
+        const windowData = (isHistorical || timeFocus === TimeFocus.FULL_YEAR) ? yearFiltered : yearFiltered.filter(d => isWithinFocus(d.date, timeFocus));
+        
+        // Phase 3: Calculate cumulative savings for each point to show "Principal" vs "Gain"
+        let cumulativeSavings = 0;
+        const sortedIncome = [...incomeData].sort((a,b) => a.date.localeCompare(b.date));
+        const sortedExpense = [...expenseData].sort((a,b) => a.date.localeCompare(b.date));
+        
+        return windowData.map(entry => {
+            const date = entry.date;
+            // Savings = Income up to this date - Expenses up to this date
+            const incomeToDate = sortedIncome.filter(i => i.date <= date && i.date.startsWith(String(selectedYear))).reduce((sum, i) => sum + i.amount, 0);
+            const expenseToDate = sortedExpense.filter(e => e.date <= date && e.date.startsWith(String(selectedYear))).reduce((sum, e) => sum + e.total, 0);
+            
+            const principal = startValue + (incomeToDate - expenseToDate);
+            return {
+                ...entry,
+                principal: Math.max(0, principal),
+                gain: Math.max(0, entry.value - principal)
+            };
+        });
+    }, [data, selectedYear, isHistorical, timeFocus, incomeData, expenseData, startValue]);
 
     const formatAxisDate = (str: string) => {
         const d = parseISOToLocal(str);
@@ -166,12 +328,15 @@ const NetWorthChart = memo(({
     };
 
     return (
-        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[480px] shadow-sm transition-colors relative overflow-hidden">
+        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[480px] shadow-sm transition-colors relative overflow-hidden group">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 relative z-10">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                    <TrendingUp size={20} className="text-emerald-500 dark:text-emerald-400" />
-                    Net Worth History
-                </h3>
+                <div>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                        <TrendingUp size={20} className="text-emerald-500 dark:text-emerald-400" />
+                        Net Worth History
+                    </h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Principal vs. Market Growth</p>
+                </div>
                 {!isHistorical && onFocusChange && (
                     <TimeFocusSelector current={timeFocus} onChange={onFocusChange} />
                 )}
@@ -186,9 +351,13 @@ const NetWorthChart = memo(({
                     <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={filteredData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                             <defs>
+                                <linearGradient id="colorPrincipal" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.05}/>
+                                </linearGradient>
                                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor={isHistorical ? "#94a3b8" : "#10b981"} stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor={isHistorical ? "#94a3b8" : "#10b981"} stopOpacity={0}/>
+                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                                 </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
@@ -212,12 +381,27 @@ const NetWorthChart = memo(({
                                 width={50}
                             />
                             <Tooltip 
-                                contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.5rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                                itemStyle={{ color: isHistorical ? '#94a3b8' : '#10b981', fontWeight: 600 }}
-                                labelStyle={{ color: axisColor, marginBottom: '4px', fontSize: '12px' }}
-                                formatter={(value: number) => [formatBaseCurrency(value), "Net Worth"]}
+                                contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.8rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', border: '1px solid ' + tooltipBorder }}
+                                itemStyle={{ fontWeight: 600 }}
+                                labelStyle={{ color: axisColor, marginBottom: '8px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' }}
+                                formatter={(value: number, name: string) => {
+                                    if (name === 'value') return [formatBaseCurrency(value), "Total NW"];
+                                    if (name === 'principal') return [formatBaseCurrency(value), "Principal"];
+                                    return [formatBaseCurrency(value), name];
+                                }}
                                 labelFormatter={formatTooltipDate}
-                                cursor={{ stroke: isHistorical ? '#94a3b8' : '#10b981', strokeWidth: 1 }}
+                                cursor={{ stroke: axisColor, strokeWidth: 1, strokeDasharray: '4 4' }}
+                            />
+                            <Area 
+                                type="monotone" 
+                                dataKey="principal" 
+                                stroke="#3b82f6" 
+                                strokeWidth={2}
+                                strokeDasharray="5 5"
+                                fillOpacity={1} 
+                                fill="url(#colorPrincipal)" 
+                                animationDuration={1000}
+                                activeDot={false}
                             />
                             <Area 
                                 type="monotone" 
@@ -234,8 +418,8 @@ const NetWorthChart = memo(({
                 ) : (
                     <div className="h-full flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-xl bg-slate-50 dark:bg-slate-800/20">
                         <TrendingUp className="opacity-20 mb-3" size={48} />
-                        <p className="font-medium text-center px-4">No data points for selected focus window.</p>
-                        <p className="text-xs mt-1 text-slate-600 dark:text-slate-400">Try switching to 'ALL' or '12M'.</p>
+                        <p className="font-medium text-center px-4">Insufficient data for {timeFocus} window.</p>
+                        <p className="text-xs mt-1 text-slate-600 dark:text-slate-400">Log more Net Worth snapshots to see trends.</p>
                     </div>
                 )}
             </div>
@@ -348,7 +532,7 @@ const AllocationChart = memo(({ data, selectedCategory, onSelect, isDarkMode }: 
                         </PieChart>
                     </ResponsiveContainer>
                 ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-xl bg-slate-50 dark:bg-slate-800/20">
+                    <div className="h-full flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-xl bg-slate-50 dark:bg-slate-800/10">
                         <PieIcon className="opacity-20 mb-3" size={48} />
                         <p className="font-medium">No asset data found.</p>
                     </div>
@@ -413,6 +597,7 @@ const DrilldownView = memo(({ category, assets, exchangeRates }: { category: str
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
     assets, 
+    trades = [],
     netWorthHistory = [], 
     incomeData = [], 
     expenseData = [], 
@@ -453,6 +638,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
       allocationData: alloc
     };
   }, [assets, exchangeRates]);
+
+  const attributionData = useMemo(() => {
+    return calculateAttribution(netWorth, netWorthHistory, incomeData, expenseData, timeFocus);
+  }, [netWorth, netWorthHistory, incomeData, expenseData, timeFocus]);
 
   const netWorthChange = useMemo(() => {
     if (netWorthHistory.length < 1) return null;
@@ -513,14 +702,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <StatsCard title="Total Liquidity" value={totalCash} icon={Wallet} color="purple" isLoading={isLoading} isHistorical={isHistorical} />
         </div>
 
-        <NetWorthChart 
-            data={chartData} 
-            isDarkMode={isDarkMode} 
-            selectedYear={selectedYear} 
-            isHistorical={isHistorical}
-            timeFocus={timeFocus}
-            onFocusChange={onTimeFocusChange}
-        />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+                <NetWorthChart 
+                    data={chartData} 
+                    isDarkMode={isDarkMode} 
+                    selectedYear={selectedYear} 
+                    isHistorical={isHistorical}
+                    timeFocus={timeFocus}
+                    onFocusChange={onTimeFocusChange}
+                    incomeData={incomeData}
+                    expenseData={expenseData}
+                    startValue={attributionData.startValue}
+                />
+            </div>
+            <div className="lg:col-span-1">
+                <WealthDriversCard 
+                    attribution={attributionData}
+                    isLoading={isLoading}
+                    timeFocus={timeFocus}
+                />
+            </div>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
