@@ -7,7 +7,7 @@ import { convertToBase, formatBaseCurrency, formatNativeCurrency, PRIMARY_CURREN
 import { isSafeKey } from '../services/geminiService';
 import { isInvestmentAsset, isCashAsset } from '../services/classificationService';
 import { TimeFocusSelector } from './TimeFocusSelector';
-import { calculateAttribution } from '../services/portfolioService';
+import { calculateAttribution, isDateWithinFocus } from '../services/portfolioService';
 
 interface DashboardProps {
   assets: Asset[];
@@ -35,36 +35,8 @@ const parseISOToLocal = (isoStr: string): Date => {
     return new Date(year, month, day);
 };
 
-const isWithinFocus = (dateStr: string, focus: TimeFocus): boolean => {
-    const d = new Date(dateStr);
-    const now = new Date();
-    
-    switch (focus) {
-        case TimeFocus.MTD:
-            return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-        case TimeFocus.QTD:
-            const currentQuarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
-            const quarterStart = new Date(now.getFullYear(), currentQuarterStartMonth, 1);
-            return d >= quarterStart;
-        case TimeFocus.YTD:
-            return d.getFullYear() === now.getFullYear();
-        case TimeFocus.ROLLING_12M:
-            const oneYearAgo = new Date();
-            oneYearAgo.setFullYear(now.getFullYear() - 1);
-            return d >= oneYearAgo;
-        case TimeFocus.FULL_YEAR:
-        default:
-            return true;
-    }
-};
-
 const StatsCard = memo(({ 
-    title, 
-    value, 
-    icon: Icon, 
-    color, 
-    isLoading, 
-    change,
+    title, value, icon: Icon, color, isLoading, change,
     isHistorical
 }: { 
     title: string, 
@@ -222,7 +194,7 @@ const WealthDriversCard = memo(({
 
                     <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800/50 group/row hover:bg-slate-100 dark:hover:bg-slate-900/50 transition-colors">
                         <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-xl group-hover/row:scale-110 transition-transform ${isGain ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                            <div className={`p-2 rounded-xl group-hover/row:scale-110 transition-transform ${isGain ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-500'}`}>
                                 <TrendingUp size={18} />
                             </div>
                             <div>
@@ -289,10 +261,13 @@ const NetWorthChart = memo(({
 
     const filteredData = useMemo(() => {
         const yearFiltered = data.filter(d => d.date.startsWith(String(selectedYear)));
-        const windowData = (isHistorical || timeFocus === TimeFocus.FULL_YEAR) ? yearFiltered : yearFiltered.filter(d => isWithinFocus(d.date, timeFocus));
+        // Logic: Time focusing (MTD/YTD) only makes sense relative to "today". 
+        // If we are looking at a historical archive, show the whole year regardless.
+        const windowData = (isHistorical || timeFocus === TimeFocus.FULL_YEAR) 
+            ? yearFiltered 
+            : yearFiltered.filter(d => isDateWithinFocus(d.date, timeFocus));
         
-        // Phase 3: Calculate cumulative savings for each point to show "Principal" vs "Gain"
-        let cumulativeSavings = 0;
+        // Calculate cumulative savings for each point to show "Principal" vs "Gain"
         const sortedIncome = [...incomeData].sort((a,b) => a.date.localeCompare(b.date));
         const sortedExpense = [...expenseData].sort((a,b) => a.date.localeCompare(b.date));
         

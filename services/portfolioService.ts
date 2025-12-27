@@ -3,6 +3,41 @@ import { Investment, Trade, NetWorthEntry, TimeFocus, AttributionResult, IncomeE
 import { normalizeTicker } from './geminiService';
 
 /**
+ * Checks if a YYYY-MM-DD string falls within a specific TimeFocus window relative to "now".
+ */
+export const isDateWithinFocus = (dateStr: string, focus: TimeFocus): boolean => {
+  if (!dateStr) return false;
+  if (focus === TimeFocus.FULL_YEAR) return true;
+
+  // Normalize inputs: Today at local midnight
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  // Parse target: YYYY-MM-DD at local midnight
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const target = new Date(y, m - 1, d);
+
+  switch (focus) {
+    case TimeFocus.MTD:
+      return target.getFullYear() === today.getFullYear() && target.getMonth() === today.getMonth();
+    case TimeFocus.QTD: {
+      const qStartMonth = Math.floor(today.getMonth() / 3) * 3;
+      const qStart = new Date(today.getFullYear(), qStartMonth, 1);
+      return target >= qStart;
+    }
+    case TimeFocus.YTD:
+      return target.getFullYear() === today.getFullYear();
+    case TimeFocus.ROLLING_12M: {
+      const limit = new Date(today);
+      limit.setFullYear(today.getFullYear() - 1);
+      return target >= limit;
+    }
+    default:
+      return true;
+  }
+};
+
+/**
  * Reconciles static Investment data from Sheets with dynamic Trade data.
  */
 export const reconcileInvestments = (investments: Investment[], trades: Trade[]): Investment[] => {
