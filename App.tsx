@@ -19,13 +19,12 @@ import { reconcileInvestments } from './services/portfolioService';
 import { useIndexedDB } from './hooks/useIndexedDB';
 import { initGoogleAuth, signIn, restoreSession, signOut } from './services/authService';
 import { getArchiveManagementList } from './services/backupService';
-import { Lock, History, AlertCircle, RefreshCw, Loader2 as Spinner } from 'lucide-react';
+import { Lock, History, AlertCircle, RefreshCw, Loader2, Eye, EyeOff } from 'lucide-react';
 import { 
   addTradeToSheet, deleteRowFromSheet, updateTradeInSheet, 
   addAssetToSheet, updateAssetInSheet,
   addSubscriptionToSheet, updateSubscriptionInSheet,
   addAccountToSheet, updateAccountInSheet,
-  addTaxRecordToSheet, updateTaxRecordInSheet,
   updateLedgerValue
 } from './services/sheetWriteService';
 
@@ -43,8 +42,7 @@ const DEFAULT_CONFIG: SheetConfig = {
     logData: 'logdata',
     debt: 'debt',
     income: 'Income',
-    expenses: 'Expense',
-    taxAccounts: 'Taxable Accounts'
+    expenses: 'Expense'
   }
 };
 
@@ -119,9 +117,6 @@ function App() {
       setAvailableArchives(archives.map(a => a.year));
   };
 
-  /**
-   * Scans Google Spreadsheet for tabs matching Archive convention (e.g. Income-24)
-   */
   const scanForRemoteArchives = useCallback(async () => {
       if (!sheetConfig.sheetId) return;
       try {
@@ -204,7 +199,6 @@ function App() {
                     case 'accounts': setAccounts(await fetchSafe(actualTabName, 'accounts')); break;
                     case 'logData': setNetWorthHistory(await fetchSafe(actualTabName, 'logData')); break;
                     case 'debt': setDebtEntries(await fetchSafe(actualTabName, 'debt')); break;
-                    case 'taxAccounts': setTaxRecords(await fetchSafe(actualTabName, 'taxAccounts')); break;
                     case 'income': 
                         const finData = await fetchSafe<IncomeAndExpenses>(actualTabName, 'income'); 
                         setIncomeData(finData.income); 
@@ -226,7 +220,7 @@ function App() {
         if (!specificTabs) scanForRemoteArchives();
     } catch (e: any) { setSyncStatus({ type: 'error', msg: e.message || "Sync failed." }); }
     finally { setIsSyncing(false); }
-  }, [sheetConfig, selectedYear, activeYear, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setDebtEntries, setTaxRecords, setIncomeData, setExpenseData, setDetailedExpenses, setDetailedIncome, setLastUpdatedStr, setAuthSession, scanForRemoteArchives]);
+  }, [sheetConfig, selectedYear, activeYear, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setDebtEntries, setIncomeData, setExpenseData, setDetailedExpenses, setDetailedIncome, setLastUpdatedStr, setAuthSession, scanForRemoteArchives]);
 
   useEffect(() => {
     if (sheetConfig.sheetId && incomeData.length === 0 && !isSyncing && !discoveryAttempted[selectedYear]) {
@@ -245,6 +239,20 @@ function App() {
     await updateFn(sheetConfig.sheetId, tabName, item.rowIndex, item);
     setter(prev => prev.map(i => i.id === item.id ? item : i));
   }, [sheetConfig, selectedYear, activeYear]);
+
+  // --- Local-First Tax Record Handlers ---
+
+  const handleAddTaxRecord = useCallback(async (record: TaxRecord) => {
+      setTaxRecords(prev => [...prev, record]);
+  }, [setTaxRecords]);
+
+  const handleEditTaxRecord = useCallback(async (record: TaxRecord) => {
+      setTaxRecords(prev => prev.map(r => r.id === record.id ? record : r));
+  }, [setTaxRecords]);
+
+  const handleDeleteTaxRecord = useCallback(async (record: TaxRecord) => {
+      setTaxRecords(prev => prev.filter(r => r.id !== record.id));
+  }, [setTaxRecords]);
 
   const handleSignOut = useCallback(() => { signOut(); setUserProfile(null); setAuthSession(null); setCurrentView(ViewState.DASHBOARD); }, [setUserProfile, setAuthSession]);
 
@@ -268,75 +276,24 @@ function App() {
   const calculatedInvestments = useMemo(() => reconcileInvestments(investments, trades), [investments, trades]);
 
   const isHistorical = selectedYear !== activeYear;
+  // Limit the chronos aesthetic strictly to the Income & Expense view as requested
+  const showChronosAesthetic = isHistorical && currentView === ViewState.INCOME;
   
-  // Banner only appears on views that are year-contextual (Dashboard and Income)
-  const showChronosBanner = isHistorical && [ViewState.DASHBOARD, ViewState.INCOME].includes(currentView);
-
   return (
-    <div className={`flex flex-col md:flex-row min-h-screen font-sans ${isGhostMode ? 'ghost-mode-active' : ''}`}>
+    <div className={`flex flex-col md:flex-row min-h-screen font-sans ${isGhostMode ? 'ghost-mode-active' : ''} ${showChronosAesthetic ? 'chronos-historical' : ''}`}>
       <Navigation 
         currentView={currentView} setView={setCurrentView} onSync={() => syncData()} isSyncing={isSyncing} 
         lastUpdated={lastUpdated} isDarkMode={isDarkMode} toggleTheme={toggleTheme} 
-        isGhostMode={isGhostMode} toggleGhostMode={toggleGhostMode}
       />
       <main className="flex-1 overflow-y-auto h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
-        <div className="max-w-7xl mx-auto p-6 md:p-12 mb-20 md:mb-0 relative">
+        <div className={`max-w-7xl mx-auto p-6 md:p-12 mb-20 md:mb-0 relative transition-all duration-700 ${showChronosAesthetic ? 'sepia-[0.15] contrast-[0.95]' : ''}`}>
           
-          {/* Chronos Mode Banner */}
-          {showChronosBanner && (
-              <div className="flex items-center justify-between mb-8 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl animate-in slide-in-from-top duration-500">
-                  <div className="flex items-center gap-3">
-                      <div className="p-2 bg-amber-500 text-white rounded-xl shadow-lg shadow-amber-500/20"><Lock size={18} /></div>
-                      <div>
-                          <p className="text-sm font-black text-amber-600 dark:text-amber-400 uppercase tracking-tighter">Chronos Mode: Read-Only Archive</p>
-                          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Viewing data from financial year {selectedYear}. Mutations are disabled.</p>
-                      </div>
-                  </div>
-                  <button onClick={() => setSelectedYear(activeYear)} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black uppercase rounded-xl transition-all shadow-md">Return to {activeYear}</button>
-              </div>
-          )}
-
-          {/* Year Context Control (Time Machine) */}
-          {(currentView === ViewState.DASHBOARD || currentView === ViewState.INCOME) && (
-              <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-                  <div>
-                      <h4 className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-[0.2em] mb-1">Navigation</h4>
-                      <div className="flex items-center gap-2">
-                        <History size={16} className="text-blue-500" />
-                        <span className="text-lg font-black text-slate-900 dark:text-white">Time Machine</span>
-                      </div>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white dark:bg-slate-800 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                      {timeMachineYears.map(year => {
-                          const isCached = availableArchives.includes(year) || year === activeYear;
-                          return (
-                            <button
-                                key={year}
-                                onClick={() => setSelectedYear(year)}
-                                className={`px-4 py-2 rounded-xl text-xs font-black transition-all relative flex items-center gap-2 ${
-                                    selectedYear === year 
-                                    ? 'bg-blue-600 text-white shadow-xl shadow-blue-500/20 z-10' 
-                                    : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
-                                }`}
-                            >
-                                {year}
-                                <div className={`w-1.5 h-1.5 rounded-full ${
-                                    year === activeYear ? 'bg-blue-400 animate-pulse' : 
-                                    isCached ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-slate-600'
-                                }`} title={year === activeYear ? 'Active Ledger' : isCached ? 'Cached Locally' : 'Remote Archive'} />
-                            </button>
-                          );
-                      })}
-                  </div>
-              </div>
-          )}
-
           {/* Discovery State (Loading vs Error vs Ready) */}
           {isHistorical && (currentView === ViewState.DASHBOARD || currentView === ViewState.INCOME) && incomeData.length === 0 && (
                <div className="bg-white dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl p-16 flex flex-col items-center justify-center text-center space-y-6 animate-fade-in">
                    {isSyncing ? (
                         <div className="flex flex-col items-center gap-4">
-                            <Spinner size={48} className="animate-spin text-blue-500" />
+                            <Loader2 size={48} className="animate-spin text-blue-500" />
                             <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-widest">Discovering Archives...</h3>
                         </div>
                    ) : discoveryAttempted[selectedYear] ? (
@@ -383,23 +340,58 @@ function App() {
                     selectedYear={selectedYear} 
                     timeFocus={timeFocus}
                     onTimeFocusChange={setTimeFocus}
+                    availableYears={timeMachineYears}
+                    onYearChange={setSelectedYear}
                   />
               )}
               {currentView === ViewState.ASSETS && <AssetsList assets={assets} isLoading={isSyncing} exchangeRates={exchangeRates} onAddAsset={a => addAssetToSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, a).then(() => syncData(['assets']))} onEditAsset={a => handleEditGeneric(a, sheetConfig.tabNames.assets, updateAssetInSheet, setAssets)} onDeleteAsset={a => handleDeleteGeneric(a, sheetConfig.tabNames.assets, setAssets)} isReadOnly={false} isGhostMode={isGhostMode} />}
               {currentView === ViewState.INVESTMENTS && <InvestmentsList investments={calculatedInvestments} assets={assets} trades={trades} isLoading={isSyncing} exchangeRates={exchangeRates} />}
               {currentView === ViewState.TRADES && <TradesList trades={trades} isLoading={isSyncing} onAddTrade={t => addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, t).then(() => syncData(['trades']))} onEditTrade={t => handleEditGeneric(t, sheetConfig.tabNames.trades, updateTradeInSheet, setTrades)} onDeleteTrade={t => handleDeleteGeneric(t, sheetConfig.tabNames.trades, setTrades)} isReadOnly={false} />}
-              {currentView === ViewState.INCOME && <IncomeView incomeData={incomeData} expenseData={expenseData} detailedExpenses={detailedExpenses} detailedIncome={detailedIncome} isLoading={isSyncing} isDarkMode={isDarkMode} isReadOnly={isHistorical} selectedYear={selectedYear} onUpdateExpense={async (cat, sub, m, v) => { await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.expenses, cat, sub, m, v); syncData(['expenses']); }} onUpdateIncome={async (cat, sub, m, v) => { await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.income, cat, sub, m, v); syncData(['income']); }} />}
-              {currentView === ViewState.INFORMATION && <InformationView subscriptions={subscriptions} accounts={accounts} debtEntries={debtEntries} taxRecords={taxRecords} isLoading={isSyncing} onAddSubscription={s => addSubscriptionToSheet(sheetConfig.sheetId, sheetConfig.tabNames.subscriptions, s).then(() => syncData(['subscriptions']))} onEditSubscription={s => handleEditGeneric(s, sheetConfig.tabNames.subscriptions, updateSubscriptionInSheet, setSubscriptions)} onDeleteSubscription={s => handleDeleteGeneric(s, sheetConfig.tabNames.subscriptions, setSubscriptions)} onAddAccount={a => addAccountToSheet(sheetConfig.sheetId, sheetConfig.tabNames.accounts, a).then(() => syncData(['accounts']))} onEditAccount={a => handleEditGeneric(a, sheetConfig.tabNames.accounts, updateAccountInSheet, setAccounts)} onDeleteAccount={a => handleDeleteGeneric(a, sheetConfig.tabNames.accounts, setAccounts)} onAddTaxRecord={r => addTaxRecordToSheet(sheetConfig.sheetId, sheetConfig.tabNames.taxAccounts, r).then(() => syncData(['taxAccounts']))} onEditTaxRecord={r => handleEditGeneric(r, sheetConfig.tabNames.taxAccounts, updateTaxRecordInSheet, setTaxRecords)} onDeleteTaxRecord={r => handleDeleteGeneric(r, sheetConfig.tabNames.taxAccounts, setTaxRecords)} isReadOnly={false} />}
+              {currentView === ViewState.INCOME && <IncomeView incomeData={incomeData} expenseData={expenseData} detailedExpenses={detailedExpenses} detailedIncome={detailedIncome} isLoading={isSyncing} isDarkMode={isDarkMode} isReadOnly={isHistorical} selectedYear={selectedYear} onUpdateExpense={async (cat, sub, m, v) => { await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.expenses, cat, sub, m, v); syncData(['expenses']); }} onUpdateIncome={async (cat, sub, m, v) => { await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.income, cat, sub, m, v); syncData(['income']); }} availableYears={timeMachineYears} onYearChange={setSelectedYear} activeYear={activeYear} />}
+              {currentView === ViewState.INFORMATION && <InformationView subscriptions={subscriptions} accounts={accounts} debtEntries={debtEntries} taxRecords={taxRecords} isLoading={isSyncing} onAddSubscription={s => addSubscriptionToSheet(sheetConfig.sheetId, sheetConfig.tabNames.subscriptions, s).then(() => syncData(['subscriptions']))} onEditSubscription={s => handleEditGeneric(s, sheetConfig.tabNames.subscriptions, updateSubscriptionInSheet, setSubscriptions)} onDeleteSubscription={s => handleDeleteGeneric(s, sheetConfig.tabNames.subscriptions, setSubscriptions)} onAddAccount={a => addAccountToSheet(sheetConfig.sheetId, sheetConfig.tabNames.accounts, a).then(() => syncData(['accounts']))} onEditAccount={a => handleEditGeneric(a, sheetConfig.tabNames.accounts, updateAccountInSheet, setAccounts)} onDeleteAccount={a => handleDeleteGeneric(a, sheetConfig.tabNames.accounts, setAccounts)} onAddTaxRecord={handleAddTaxRecord} onEditTaxRecord={handleEditTaxRecord} onDeleteTaxRecord={handleDeleteTaxRecord} isReadOnly={false} />}
               {currentView === ViewState.SETTINGS && <DataIngest config={sheetConfig} onConfigChange={setSheetConfig} onSync={syncData} isSyncing={isSyncing} syncingTabs={syncingTabs} syncStatus={syncStatus} sheetUrl={sheetUrl} onSheetUrlChange={setSheetUrl} isDarkMode={isDarkMode} toggleTheme={toggleTheme} userProfile={userProfile} onProfileChange={setUserProfile} onSessionChange={setAuthSession} onSignOut={handleSignOut} onViewChange={setCurrentView} onTourStart={() => setIsTourActive(true)} activeYear={activeYear} onRolloverSuccess={handleRolloverSuccess} />}
               {currentView === ViewState.PRIVACY && <PrivacyPolicy onBack={() => setCurrentView(ViewState.SETTINGS)} />}
               {currentView === ViewState.TERMS && <TermsOfService onBack={() => setCurrentView(ViewState.SETTINGS)} />}
           </div>
         </div>
       </main>
+
+      {/* Floating Privacy Toggle */}
+      <div className="fixed bottom-24 md:bottom-8 right-6 z-50 animate-in slide-in-from-bottom-4 duration-500">
+        <button 
+          onClick={toggleGhostMode}
+          className={`p-4 rounded-full shadow-2xl transition-all duration-300 group flex items-center gap-2 overflow-hidden ${
+            isGhostMode 
+            ? 'bg-amber-500 text-white ring-4 ring-amber-500/20' 
+            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500/50'
+          }`}
+          title={isGhostMode ? 'Privacy Mode Active' : 'Privacy Mode Off'}
+        >
+          {isGhostMode ? <EyeOff size={24} /> : <Eye size={24} />}
+          <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-500 whitespace-nowrap text-sm font-black uppercase tracking-widest px-0 group-hover:px-2">
+            {isGhostMode ? 'Privacy On' : 'Privacy Off'}
+          </span>
+        </button>
+      </div>
+
       <style>{`
         .ghost-mode-active .ghost-blur {
-          filter: blur(5px);
+          filter: blur(10px);
           transition: filter 0.3s ease;
+          user-select: none;
+          pointer-events: none;
+        }
+        .chronos-historical {
+          --primary-accent: 245, 158, 11; /* Amber 500 */
+        }
+        .chronos-historical button.bg-blue-600 {
+            background-color: rgb(var(--primary-accent)) !important;
+        }
+        .chronos-historical .text-blue-600, .chronos-historical .text-blue-500 {
+            color: rgb(var(--primary-accent)) !important;
+        }
+        .chronos-historical .border-blue-500 {
+            border-color: rgb(var(--primary-accent)) !important;
         }
       `}</style>
       {isTourActive && <GuidedTour steps={TOUR_STEPS} onComplete={() => { setIsTourActive(false); setHasCompletedTour(true); }} onStepChange={(view) => setCurrentView(view)} />}

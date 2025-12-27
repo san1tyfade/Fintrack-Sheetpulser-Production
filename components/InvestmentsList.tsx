@@ -80,7 +80,7 @@ const AllocationCard = memo(({
         </div>
         <div className="space-y-1">
             <h4 className="text-slate-500 dark:text-slate-400 text-xs font-black uppercase tracking-tighter truncate pr-4" title={title}>{title}</h4>
-            <div className="text-2xl font-black text-slate-900 dark:text-white min-h-[2rem] flex items-center tracking-tight">
+            <div className="text-2xl font-black text-slate-900 dark:text-white min-h-[2rem] flex items-center tracking-tight ghost-blur">
                 {isLoading ? <div className="h-8 w-32 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse" /> : `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
             </div>
         </div>
@@ -127,9 +127,9 @@ const HoldingsTable = memo(({ holdings, onClose }: { holdings: any[], onClose: (
                                         </span>
                                     </div>
                                 </td>
-                                <td className="p-6 text-right text-slate-600 dark:text-slate-300 font-mono text-sm">{h.quantity.toLocaleString()}</td>
-                                <td className="p-6 text-right text-slate-600 dark:text-slate-300 font-mono text-sm">{`$${h.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
-                                <td className={`p-6 text-right font-black font-mono text-sm ${h.isLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>{`$${h.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</td>
+                                <td className="p-6 text-right text-slate-600 dark:text-slate-300 font-mono text-sm ghost-blur">{h.quantity.toLocaleString()}</td>
+                                <td className="p-6 text-right text-slate-600 dark:text-slate-300 font-mono text-sm ghost-blur">{`$${h.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                                <td className={`p-6 text-right font-black font-mono text-sm ghost-blur ${h.isLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>{`$${h.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</td>
                             </tr>
                         ))}
                         {holdings.length === 0 && <tr><td colSpan={4} className="p-20 text-center text-slate-400 font-medium italic">No holdings found.</td></tr>}
@@ -165,7 +165,7 @@ const AccountGroup = memo(({ name, items, livePrices, tradesByTicker, isLoading,
                     </div>
                 </div>
                 <div className="flex items-center gap-4">
-                    <div className="text-lg font-black text-slate-900 dark:text-white bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-6 py-3 rounded-2xl shadow-sm">
+                    <div className="text-lg font-black text-slate-900 dark:text-white bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-6 py-3 rounded-2xl shadow-sm ghost-blur">
                         {isLoading ? <div className="h-6 w-24 bg-slate-200 dark:bg-slate-600/50 rounded animate-pulse" /> : `$${groupTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors">
@@ -214,11 +214,11 @@ const AccountGroup = memo(({ name, items, livePrices, tradesByTicker, isLoading,
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="p-6 text-right text-slate-600 dark:text-slate-300 font-mono text-sm">{inv.quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
-                                        <td className="p-6 text-right text-slate-500 dark:text-slate-400 font-mono text-sm">{`$${inv.avgPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
-                                        <td className={`p-6 text-right font-bold font-mono text-sm ${isLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>{`$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
-                                        <td className={`p-6 text-right font-black font-mono text-sm ${isLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>{`$${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</td>
-                                        <td className={`p-6 text-right font-bold font-mono text-sm ${gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                        <td className="p-6 text-right text-slate-600 dark:text-slate-300 font-mono text-sm ghost-blur">{inv.quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+                                        <td className="p-6 text-right text-slate-500 dark:text-slate-400 font-mono text-sm ghost-blur">{`$${inv.avgPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                                        <td className={`p-6 text-right font-bold font-mono text-sm ghost-blur ${isLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>{`$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                                        <td className={`p-6 text-right font-black font-mono text-sm ghost-blur ${isLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>{`$${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</td>
+                                        <td className={`p-6 text-right font-bold font-mono text-sm ghost-blur ${gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                                             <div className="flex flex-col items-end">
                                                 <span>{gain >= 0 ? '+' : ''}{gain.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                                                 <span className="text-[10px] opacity-70 font-black">{gainPct}%</span>

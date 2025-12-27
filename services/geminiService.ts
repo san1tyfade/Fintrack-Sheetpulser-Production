@@ -31,8 +31,6 @@ export const getMarketValuationLookup = async (asset: Asset): Promise<MarketLook
         const sources: { title: string; uri: string }[] = [];
 
         // Extract grounding sources as required by Gemini rules
-        const chunks = response.candidates?.[0]?.groundingMetadata?.searchEntryPoint?.renderedContent;
-        // In some SDK versions, chunks are in groundingMetadata.groundingChunks
         const metadataChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
 
         if (metadataChunks) {
@@ -81,19 +79,6 @@ export const isSafeKey = (key: string) => {
     return !!key && !forbidden.includes(key.trim());
 };
 
-const TICKER_ALIASES: Record<string, string> = {
-  'ETHERUM': 'ETH',
-  'ETHERIUM': 'ETH',
-  'ETHEREUM': 'ETH',
-  'ETHER': 'ETH',
-  'BITCOIN': 'BTC',
-  'LITECOIN': 'LTC',
-  'SOLANA': 'SOL',
-  'CARDANO': 'ADA',
-  'RIPPLE': 'XRP',
-  'DOGECOIN': 'DOGE'
-};
-
 const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 const HEADER_KEYWORDS: Record<string, string[]> = {
@@ -103,8 +88,7 @@ const HEADER_KEYWORDS: Record<string, string[]> = {
     subscriptions: ['name', 'service', 'cost', 'price', 'period', 'active'],
     accounts: ['institution', 'bank', 'account', 'type', 'card'],
     logData: ['date', 'worth', 'total', 'balance', 'net'],
-    debt: ['name', 'owed', 'rate', 'payment', 'loan', 'mortgage', 'student loan'],
-    taxAccounts: ['account type', 'transcation type', 'record type', 'transaction type', 'date', 'value', 'description']
+    debt: ['name', 'owed', 'rate', 'payment', 'loan', 'mortgage', 'student loan']
 };
 
 export const normalizeTicker = (ticker: string): string => {
@@ -122,13 +106,7 @@ export const normalizeTicker = (ticker: string): string => {
       }
   }
 
-  clean = clean.trim();
-  if (TICKER_ALIASES[clean]) return TICKER_ALIASES[clean];
-  
-  for (const key in TICKER_ALIASES) {
-      if (clean.startsWith(key)) return TICKER_ALIASES[key];
-  }
-  return clean;
+  return clean.trim();
 };
 
 const parseCSVLine = (line: string): string[] => {
@@ -404,39 +382,9 @@ const createDebtParser = (headers: string[]) => {
     };
 };
 
-const createTaxRecordParser = (headers: string[]) => {
-    const idx = resolveIndices(headers, {
-        recordType: ['account type', 'record type', 'type', 'category'],
-        accountFund: ['account/fund', 'fund', 'account'],
-        transactionType: ['transcation type', 'transaction type', 'trans type', 'action'],
-        date: ['date', 'time'],
-        value: ['value', 'amount'],
-        description: ['description', 'note', 'details']
-    });
-
-    return (values: string[]): TaxRecord | null => {
-        const recordType = (idx.recordType !== -1 ? values[idx.recordType] : '') || 'Unknown';
-        const value = parseNumber(idx.value !== -1 ? values[idx.value] : '0');
-        if (recordType === 'Unknown' && value === 0) return null;
-        
-        const dateStr = idx.date !== -1 ? values[idx.date] : '';
-        const date = parseFlexibleDate(dateStr) || '2000-01-01';
-
-        return {
-            id: generateId(),
-            recordType,
-            accountFund: (idx.accountFund !== -1 ? values[idx.accountFund] : '') || '',
-            transactionType: (idx.transactionType !== -1 ? values[idx.transactionType] : '') || '',
-            date,
-            value,
-            description: (idx.description !== -1 ? values[idx.description] : '') || ''
-        };
-    };
-};
-
 export const parseRawData = async <T,>(
   rawData: string,
-  dataType: 'assets' | 'investments' | 'trades' | 'subscriptions' | 'accounts' | 'logData' | 'debt' | 'income' | 'detailedExpenses' | 'detailedIncome' | 'taxAccounts'
+  dataType: 'assets' | 'investments' | 'trades' | 'subscriptions' | 'accounts' | 'logData' | 'debt' | 'income' | 'detailedExpenses' | 'detailedIncome'
 ): Promise<T> => {
   if (!rawData) {
       if (dataType === 'income') return { income: [], expenses: [] } as T;
@@ -481,7 +429,6 @@ export const parseRawData = async <T,>(
       case 'accounts': parser = createAccountParser(originalHeaders); break;
       case 'logData': parser = createLogDataParser(originalHeaders); break;
       case 'debt': parser = createDebtParser(originalHeaders); break;
-      case 'taxAccounts': parser = createTaxRecordParser(originalHeaders); break;
   }
   if (!parser) return [] as T;
 
@@ -491,7 +438,7 @@ export const parseRawData = async <T,>(
     if (values.every(v => v === '')) continue;
     const parsedItem = parser(values);
     if (parsedItem) {
-        if (['trades', 'assets', 'subscriptions', 'accounts', 'debt', 'taxAccounts'].includes(dataType)) {
+        if (['trades', 'assets', 'subscriptions', 'accounts', 'debt'].includes(dataType)) {
             (parsedItem as any).rowIndex = i;
         }
         results.push(parsedItem);

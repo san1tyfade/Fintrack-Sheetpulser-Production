@@ -134,7 +134,6 @@ export interface SheetConfig {
     debt: string;
     income: string;
     expenses: string;
-    taxAccounts: string;
   };
 }
 
@@ -187,6 +186,5 @@ export interface AttributionResult {
 export interface ArchiveMeta {
   year: number;
   records: number;
-  isLocked: boolean;
   lastUpdated: string;
 }

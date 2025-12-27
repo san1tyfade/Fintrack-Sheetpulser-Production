@@ -1,7 +1,7 @@
 
 import React, { useMemo, memo, useState, useEffect } from 'react';
 import { Subscription, BankAccount, DebtEntry, TaxRecord } from '../types';
-import { CreditCard, Landmark, Calendar, Tag, Loader2, TrendingDown, Flame, Plus, Pencil, Trash2, X, Save, ChevronDown, ChevronUp, Clock, ShieldCheck } from 'lucide-react';
+import { CreditCard, Landmark, Calendar, Tag, Loader2, TrendingDown, Flame, Plus, Pencil, Trash2, X, Save, ChevronDown, ChevronUp, Clock, ShieldCheck, Briefcase, Wallet, Receipt } from 'lucide-react';
 import { formatBaseCurrency, PRIMARY_CURRENCY } from '../services/currencyService';
 import { TaxRoomTracker } from './TaxRoomTracker';
 
@@ -20,11 +20,11 @@ interface InformationViewProps {
   onAddTaxRecord?: (rec: TaxRecord) => Promise<void>;
   onEditTaxRecord?: (rec: TaxRecord) => Promise<void>;
   onDeleteTaxRecord?: (rec: TaxRecord) => Promise<void>;
-  // Added isReadOnly to fix TypeScript errors in App.tsx
   isReadOnly?: boolean;
 }
 
-// --- Helper for Debt precision ---
+type InfoTab = 'tax' | 'commitments' | 'accounts';
+
 const formatDebtAmount = (amount: number) => {
     return new Intl.NumberFormat('en-CA', { 
         style: 'currency', 
@@ -64,7 +64,7 @@ const SubscriptionModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: b
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
             <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
                     <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
@@ -143,7 +143,7 @@ const AccountModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolea
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
             <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
                     <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
@@ -204,33 +204,38 @@ const AccountModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolea
     );
 };
 
-// --- View ---
+// --- Main View ---
 
 export const InformationView: React.FC<InformationViewProps> = ({ 
     subscriptions, accounts, debtEntries = [], taxRecords = [], isLoading = false,
     onAddSubscription, onEditSubscription, onDeleteSubscription,
     onAddAccount, onEditAccount, onDeleteAccount,
     onAddTaxRecord, onEditTaxRecord, onDeleteTaxRecord,
-    // Destructured isReadOnly from props
     isReadOnly = false
 }) => {
+  const [activeTab, setActiveTab] = useState<InfoTab>('tax');
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
   const [isAddingSub, setIsAddingSub] = useState(false);
   const [editingAcc, setEditingAcc] = useState<BankAccount | null>(null);
   const [isAddingAcc, setIsAddingAcc] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [showAllDebt, setShowAllDebt] = useState(false); // Collapsed by default
+  const [showAllDebt, setShowAllDebt] = useState(false);
 
-  const totalMonthlyCost = useMemo(() => {
-    const subCost = subscriptions.reduce((acc, sub) => {
-        if (!sub.active) return acc;
+  const subStats = useMemo(() => {
+    const activeSubs = subscriptions.filter(s => s.active);
+    const monthlyCost = activeSubs.reduce((acc, sub) => {
         if (sub.period.toLowerCase() === 'monthly') return acc + sub.cost;
         if (sub.period.toLowerCase() === 'yearly') return acc + (sub.cost / 12);
+        if (sub.period.toLowerCase() === 'weekly') return acc + (sub.cost * 4.33);
         return acc;
     }, 0);
+    return { count: activeSubs.length, monthlyCost };
+  }, [subscriptions]);
+
+  const totalMonthlyCost = useMemo(() => {
     const debtCost = debtEntries.reduce((acc, debt) => acc + (debt.monthlyPayment || 0), 0);
-    return subCost + debtCost;
-  }, [subscriptions, debtEntries]);
+    return subStats.monthlyCost + debtCost;
+  }, [subStats.monthlyCost, debtEntries]);
 
   const handleDeleteSub = async (sub: Subscription) => {
       if (!onDeleteSubscription || !confirm(`Delete subscription "${sub.name}"?`)) return;
@@ -255,159 +260,225 @@ export const InformationView: React.FC<InformationViewProps> = ({
   const visibleDebt = showAllDebt ? visibleEntries : visibleEntries.slice(0, 1);
   const hasMultipleDebt = visibleEntries.length > 1;
 
+  const TabButton = ({ id, label, icon: Icon }: { id: InfoTab, label: string, icon: any }) => (
+    <button
+        onClick={() => setActiveTab(id)}
+        className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${
+            activeTab === id 
+            ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20 translate-y-[-2px]' 
+            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white dark:hover:bg-slate-800'
+        }`}
+    >
+        <Icon size={16} />
+        {label}
+    </button>
+  );
+
   return (
-    <div className="space-y-12 animate-fade-in pb-20">
+    <div className="space-y-8 animate-fade-in pb-20">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <h2 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
             Information
             {isLoading && <Loader2 className="animate-spin text-blue-500" size={24} />}
           </h2>
-          <p className="text-slate-500 dark:text-slate-400">Tax advantages, liabilities, and account details.</p>
+          <p className="text-slate-500 dark:text-slate-400 font-medium">Detailed financial registry and commitment tracking.</p>
         </div>
-        <div className="bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50 p-4 rounded-xl flex items-center gap-4 min-w-[240px] shadow-lg">
-             <div className="p-3 bg-red-500/10 rounded-lg text-red-500"><Flame size={24} /></div>
-             <div>
-                 <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Total Monthly Burn</p>
-                 <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
-                     {isLoading ? <div className="h-8 w-24 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse" /> : formatBaseCurrency(totalMonthlyCost)}
-                 </div>
-             </div>
+        <div className="flex bg-slate-100 dark:bg-slate-900/50 p-1.5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-inner">
+            <TabButton id="tax" label="Tax Advantage" icon={ShieldCheck} />
+            <TabButton id="commitments" label="Commitments" icon={Receipt} />
+            <TabButton id="accounts" label="Accounts" icon={Landmark} />
         </div>
       </header>
       
-      <div className={`space-y-12 transition-all duration-500 ${isLoading ? 'opacity-70 pointer-events-none' : 'opacity-100'}`}>
+      <div className={`transition-all duration-500 ${isLoading ? 'opacity-70 pointer-events-none' : 'opacity-100'}`}>
           
-          {/* Taxable Room Tracker */}
-          <TaxRoomTracker 
-            taxRecords={taxRecords} 
-            isLoading={isLoading} 
-            onAddTaxRecord={onAddTaxRecord}
-            onEditTaxRecord={onEditTaxRecord}
-            onDeleteTaxRecord={onDeleteTaxRecord}
-          />
+          {/* Tab Content: Tax Advantage */}
+          {activeTab === 'tax' && (
+            <div className="animate-fade-in">
+              <TaxRoomTracker 
+                taxRecords={taxRecords} 
+                isLoading={isLoading} 
+                onAddTaxRecord={onAddTaxRecord}
+                onEditTaxRecord={onEditTaxRecord}
+                onDeleteTaxRecord={onDeleteTaxRecord}
+              />
+            </div>
+          )}
 
-          {/* Liabilities */}
-          <div className="space-y-4">
-              <div className="flex justify-between items-center mb-4 px-1">
-                  <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2">
-                      <TrendingDown size={20} className="text-red-500" /> Liabilities & Debt
+          {/* Tab Content: Commitments */}
+          {activeTab === 'commitments' && (
+            <div className="space-y-10 animate-fade-in">
+                {/* Commitment Hero Section */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-gradient-to-br from-red-500 to-rose-600 p-8 rounded-3xl shadow-xl shadow-red-500/20 text-white relative overflow-hidden group">
+                        <Flame size={120} className="absolute -right-8 -bottom-8 opacity-10 group-hover:scale-110 transition-transform duration-700" />
+                        <div className="relative z-10">
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-2">Total Monthly Burn</p>
+                            <h3 className="text-4xl font-black tracking-tighter mb-6">
+                                {isLoading ? "---" : formatBaseCurrency(totalMonthlyCost)}
+                            </h3>
+                            <div className="flex gap-4">
+                                <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-xl">
+                                    <p className="text-[8px] font-black uppercase opacity-60">Subscriptions</p>
+                                    <p className="text-sm font-bold">{formatBaseCurrency(subStats.monthlyCost)}</p>
+                                </div>
+                                <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-xl">
+                                    <p className="text-[8px] font-black uppercase opacity-60">Debt Service</p>
+                                    <p className="text-sm font-bold">{formatBaseCurrency(totalMonthlyCost - subStats.monthlyCost)}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-8 rounded-3xl flex flex-col justify-center">
+                        <div className="flex items-center gap-4 mb-4">
+                            <div className="p-3 bg-purple-500/10 text-purple-500 rounded-2xl"><CreditCard size={24} /></div>
+                            <div>
+                                <h4 className="text-lg font-black text-slate-900 dark:text-white leading-none">Subscription Health</h4>
+                                <p className="text-xs text-slate-500 font-bold mt-1 uppercase tracking-widest">{subStats.count} Active Services</p>
+                            </div>
+                        </div>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+                            Recurring costs represent your "leakage". Review these services monthly to ensure you're getting value from every dollar spent.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                    {/* Liabilities */}
+                    <div className="space-y-6">
+                        <div className="flex justify-between items-center px-2">
+                            <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-3">
+                                <TrendingDown size={20} className="text-red-500" /> Liabilities & Debt
+                            </h3>
+                            {hasMultipleDebt && (
+                                <button 
+                                    onClick={() => setShowAllDebt(!showAllDebt)}
+                                    className="text-[10px] font-black uppercase tracking-widest text-blue-500 flex items-center gap-2 hover:bg-blue-50 dark:hover:bg-blue-900/30 px-3 py-2 rounded-xl transition-all"
+                                >
+                                    {showAllDebt ? <><ChevronUp size={14} /> Less</> : <><ChevronDown size={14} /> More ({visibleEntries.length})</>}
+                                </button>
+                            )}
+                        </div>
+                        <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-50/50 dark:bg-slate-900/30">
+                                    <tr>
+                                        <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Account / Loan</th>
+                                        <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Balance</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                    {visibleDebt.map(debt => (
+                                        <tr key={debt.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                                            <td className="p-6 text-sm font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">
+                                                {debt.name || '-'}
+                                            </td>
+                                            <td className="p-6 text-right font-black text-red-500 font-mono text-lg">
+                                                {formatDebtAmount(debt.amountOwed)}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {visibleDebt.length === 0 && (
+                                        <tr>
+                                            <td colSpan={2} className="p-20 text-center text-slate-400 font-black uppercase text-xs tracking-widest italic opacity-50">No debt entries detected.</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Subscriptions */}
+                    <div className="space-y-6">
+                        <div className="flex justify-between items-center px-2">
+                            <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-3">
+                                <CreditCard size={20} className="text-purple-500" /> Recurring Burn
+                            </h3>
+                            {onAddSubscription && !isReadOnly && (
+                                <button onClick={() => setIsAddingSub(true)} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-purple-500/20 transition-all hover:-translate-y-0.5 active:scale-95">
+                                    <Plus size={16} /> New Service
+                                </button>
+                            )}
+                        </div>
+                        <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50/50 dark:bg-slate-900/30">
+                                        <tr>
+                                            <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Service</th>
+                                            <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Cost</th>
+                                            <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                        {subscriptions.map(sub => (
+                                            <tr key={sub.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
+                                                <td className="p-6">
+                                                    <div className="font-black text-slate-900 dark:text-white flex items-center gap-3 tracking-tight">
+                                                        {sub.name} {!sub.active && <span className="text-[9px] bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-full text-slate-500 font-black uppercase">Inactive</span>}
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">{sub.category} • {sub.period}</div>
+                                                </td>
+                                                <td className="p-6 text-right font-black text-slate-900 dark:text-white font-mono text-base">{formatBaseCurrency(sub.cost)}</td>
+                                                <td className="p-6 text-right">
+                                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        {!isReadOnly && <button onClick={() => setEditingSub(sub)} className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-xl transition-all"><Pencil size={14} /></button>}
+                                                        {!isReadOnly && <button onClick={() => handleDeleteSub(sub)} disabled={deletingId === sub.id} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all">{deletingId === sub.id ? <Loader2 className="animate-spin text-red-500" size={14} /> : <Trash2 size={14} />}</button>}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+          )}
+
+          {/* Tab Content: Accounts */}
+          {activeTab === 'accounts' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="flex justify-between items-center px-2">
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-3">
+                      <Landmark size={24} className="text-emerald-500" /> Banking Institutions
                   </h3>
-                  {hasMultipleDebt && (
-                      <button 
-                        onClick={() => setShowAllDebt(!showAllDebt)}
-                        className="text-xs font-bold text-blue-500 flex items-center gap-1 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 transition-colors bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg"
-                      >
-                          {showAllDebt ? (
-                              <><ChevronUp size={14} /> Show Less</>
-                          ) : (
-                              <><ChevronDown size={14} /> Show All ({visibleEntries.length})</>
-                          )}
-                      </button>
+                  {onAddAccount && !isReadOnly && (
+                    <button onClick={() => setIsAddingAcc(true)} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 transition-all hover:-translate-y-0.5 active:scale-95">
+                        <Plus size={16} /> New Institution
+                    </button>
                   )}
               </div>
-              <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm transition-all">
-                <table className="w-full text-left table-auto">
-                    <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                        <tr>
-                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"><span className="flex items-center gap-1"><Clock size={12}/> Account / Type</span></th>
-                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Owed</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                        {visibleDebt.map(debt => (
-                            <tr key={debt.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                                <td className="p-4 text-xs font-medium text-slate-500 dark:text-slate-400 font-mono">
-                                    {debt.name || '-'}
-                                </td>
-                                <td className="p-4 text-right font-bold text-red-500 font-mono text-sm sm:text-base">
-                                    {formatDebtAmount(debt.amountOwed)}
-                                </td>
-                            </tr>
-                        ))}
-                        {visibleDebt.length === 0 && (
-                            <tr>
-                                <td colSpan={2} className="p-10 text-center text-slate-400 italic">No valid debt entries found. Sync the 'debt' tab to load entries.</td>
-                            </tr>
-                        )}
-                    </tbody>
-                </table>
-              </div>
-          </div>
-
-          {/* Subscriptions */}
-          <div className="space-y-4">
-              <div className="flex justify-between items-center px-1">
-                  <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2">
-                      <CreditCard size={20} className="text-purple-500" /> Recurring Subscriptions
-                  </h3>
-                  {onAddSubscription && !isReadOnly && <button onClick={() => setIsAddingSub(true)} className="p-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors shadow-lg shadow-purple-500/20"><Plus size={18} /></button>}
-              </div>
-              <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
+              <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm overflow-x-auto">
                 <table className="w-full text-left">
-                    <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                    <thead className="bg-slate-50/50 dark:bg-slate-900/30">
                         <tr>
-                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Service</th>
-                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Cost</th>
-                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                            <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Institution / Brand</th>
+                            <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Card / Method</th>
+                            <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                        {subscriptions.map(sub => (
-                            <tr key={sub.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group">
-                                <td className="p-4">
-                                    <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                        {sub.name} {!sub.active && <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded text-slate-500">Inactive</span>}
-                                    </div>
-                                    <div className="text-[10px] text-slate-500">{sub.category} • {sub.period}</div>
-                                </td>
-                                <td className="p-4 text-right font-medium text-slate-900 dark:text-white">{formatBaseCurrency(sub.cost)}</td>
-                                <td className="p-4 text-right">
-                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {!isReadOnly && <button onClick={() => setEditingSub(sub)} className="p-1.5 text-slate-400 hover:text-blue-500"><Pencil size={14} /></button>}
-                                        {!isReadOnly && <button onClick={() => handleDeleteSub(sub)} disabled={deletingId === sub.id} className="p-1.5 text-slate-400 hover:text-red-500">{deletingId === sub.id ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>}
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-              </div>
-          </div>
-
-          {/* Accounts */}
-          <div className="space-y-4">
-              <div className="flex justify-between items-center px-1">
-                  <h3 className="text-xl font-bold text-slate-400 dark:text-slate-300 flex items-center gap-2">
-                      <Landmark size={20} className="text-emerald-500" /> Banking Accounts
-                  </h3>
-                  {onAddAccount && !isReadOnly && <button onClick={() => setIsAddingAcc(true)} className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20"><Plus size={18} /></button>}
-              </div>
-              <div className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
-                <table className="w-full text-left">
-                    <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
-                        <tr>
-                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Institution</th>
-                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Card / Method</th>
-                            <th className="p-4 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
                         {accounts.map(acc => (
-                            <tr key={acc.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group">
-                                <td className="p-4">
-                                    <div className="font-bold text-slate-900 dark:text-white">{acc.institution}</div>
-                                    <div className="text-[10px] text-slate-500">{acc.name} • {acc.type}</div>
+                            <tr key={acc.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
+                                <td className="p-6">
+                                    <div className="font-black text-slate-900 dark:text-white tracking-tight text-base">{acc.institution}</div>
+                                    <div className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">{acc.name} • {acc.type}</div>
                                 </td>
-                                <td className="p-4">
-                                    <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-                                        <CreditCard size={12} className="text-slate-400" /> {acc.paymentType} {acc.accountNumber && <span className="text-slate-400 font-mono">•••• {acc.accountNumber}</span>}
+                                <td className="p-6">
+                                    <div className="flex items-center gap-3 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 w-fit px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                                        <Wallet size={14} className="text-slate-400" /> 
+                                        {acc.paymentType} 
+                                        {acc.accountNumber && <span className="text-slate-400 font-mono tracking-tighter ml-1">•••• {acc.accountNumber}</span>}
                                     </div>
                                 </td>
-                                <td className="p-4 text-right">
+                                <td className="p-6 text-right">
                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {!isReadOnly && <button onClick={() => setEditingAcc(acc)} className="p-1.5 text-slate-400 hover:text-blue-500"><Pencil size={14} /></button>}
-                                        {!isReadOnly && <button onClick={() => handleDeleteAcc(acc)} disabled={deletingId === acc.id} className="p-1.5 text-slate-400 hover:text-red-500">{deletingId === acc.id ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}</button>}
+                                        {!isReadOnly && <button onClick={() => setEditingAcc(acc)} className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-xl transition-all"><Pencil size={14} /></button>}
+                                        {!isReadOnly && <button onClick={() => handleDeleteAcc(acc)} disabled={deletingId === acc.id} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all">{deletingId === acc.id ? <Loader2 className="animate-spin text-red-500" size={14} /> : <Trash2 size={14} />}</button>}
                                     </div>
                                 </td>
                             </tr>
@@ -415,7 +486,8 @@ export const InformationView: React.FC<InformationViewProps> = ({
                     </tbody>
                 </table>
               </div>
-          </div>
+            </div>
+          )}
       </div>
 
       <SubscriptionModal isOpen={isAddingSub || !!editingSub} initialData={editingSub} onClose={() => { setIsAddingSub(false); setEditingSub(null); }} onSave={async s => editingSub ? onEditSubscription?.(s) : onAddSubscription?.(s)} />

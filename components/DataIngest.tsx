@@ -45,12 +45,10 @@ const CompactTabInput = memo(({ label, value, onChange, onSync, sheetId, isSynci
     return () => clearTimeout(timer);
   }, [value, sheetId]);
 
-  const displayLabel = label === 'taxAccounts' ? 'Tax Records' : label;
-
   return (
     <div className="flex flex-col gap-1.5 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700/50 hover:border-blue-400/30 transition-all group">
       <div className="flex justify-between items-center">
-        <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider truncate mr-2 group-hover:text-blue-500 transition-colors">{displayLabel}</label>
+        <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider truncate mr-2 group-hover:text-blue-500 transition-colors">{label}</label>
         {isSyncing || status === 'checking' ? <Loader2 size={10} className="animate-spin" /> : 
          status === 'valid' ? <CheckCircle2 size={10} className="text-emerald-500" /> : 
          status === 'invalid' ? <AlertCircle size={10} className="text-red-500" /> : null}
@@ -433,40 +431,38 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
         </div>
       </div>
 
-      {/* Phase 1 & 3: Year-End Maintenance */}
-      <div className="bg-white dark:bg-slate-800 border-2 border-blue-500/20 dark:border-blue-500/10 rounded-3xl p-8 shadow-xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none group-hover:bg-blue-500/10 transition-all"></div>
-          <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
-              <div className="p-5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-2xl border border-blue-500/20">
-                  <Zap size={32} />
-              </div>
-              <div className="flex-1 text-center md:text-left space-y-1">
-                  <h3 className="text-xl font-black text-slate-900 dark:text-white">Year-End Maintenance</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                      Ready to start a new financial chapter? This wizard will archive your current ledger and prepare a fresh, clean spreadsheet for the upcoming year.
-                  </p>
-              </div>
-              <button 
-                onClick={() => setIsRolloverOpen(true)}
-                className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 py-4 rounded-2xl shadow-xl shadow-blue-500/20 transition-all hover:-translate-y-0.5 active:scale-[0.98] whitespace-nowrap"
-              >
-                  Close Financial Year {activeYear}
-              </button>
+      {/* Tab Mappings */}
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-6">
+        <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-500 dark:text-indigo-400 border border-indigo-500/20"><Layers size={20} /></div>
+            <h3 className="text-sm font-bold">Tab Mappings</h3>
           </div>
-
-          <RolloverStepper 
-              isOpen={isRolloverOpen} 
-              onClose={() => setIsRolloverOpen(false)} 
-              onSync={async (tabs) => onSync(tabs)}
-              sheetId={config.sheetId}
-              incomeTab={config.tabNames.income}
-              expenseTab={config.tabNames.expenses}
-              activeYear={activeYear}
-              onSuccess={(nextYear) => {
-                  onRolloverSuccess(nextYear);
-                  refreshArchives();
-              }}
-          />
+          <button onClick={() => onSync()} disabled={isSyncing} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-500 shadow-lg disabled:opacity-50">
+            {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sync All Tabs
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[
+            { t: 'Portfolio', i: Layers, k: ['assets', 'investments', 'trades'] },
+            { t: 'Flow', i: DollarSign, k: ['income', 'expenses', 'subscriptions', 'debt'] },
+            { t: 'Logs & Records', i: History, k: ['accounts', 'logData'] }
+          ].map(cat => (
+            <div key={cat.t} className="space-y-3">
+              <div className="flex items-center gap-2 px-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><cat.i size={12} /> {cat.t}</div>
+              <div className="space-y-2">
+                {cat.k.map(key => (
+                  <CompactTabInput key={key} label={key} value={config.tabNames[key as keyof SheetConfig['tabNames']]} onChange={(v: string) => onConfigChange({ ...config, tabNames: { ...config.tabNames, [key]: v } })} onSync={() => onSync([key as any])} sheetId={config.sheetId} isSyncing={syncingTabs.has(key)} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        {syncStatus && (
+          <div className={`p-3 rounded-xl border text-[11px] font-bold flex items-center gap-2 ${syncStatus.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 text-emerald-600' : syncStatus.type === 'warning' ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 text-amber-600' : 'bg-red-50 dark:bg-red-500/10 border-red-200 text-red-600'}`}>
+            {syncStatus.type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />} {syncStatus.msg}
+          </div>
+        )}
       </div>
 
       {/* Storage & Archive Management */}
@@ -533,38 +529,40 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
           </div>
       </div>
 
-      {/* Tab Mappings */}
-      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-6">
-        <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-500 dark:text-indigo-400 border border-indigo-500/20"><Layers size={20} /></div>
-            <h3 className="text-sm font-bold">Tab Mappings</h3>
-          </div>
-          <button onClick={() => onSync()} disabled={isSyncing} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-500 shadow-lg disabled:opacity-50">
-            {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sync All Tabs
-          </button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[
-            { t: 'Portfolio', i: Layers, k: ['assets', 'investments', 'trades'] },
-            { t: 'Flow', i: DollarSign, k: ['income', 'expenses', 'subscriptions', 'debt'] },
-            { t: 'Logs & Records', i: History, k: ['accounts', 'logData', 'taxAccounts'] }
-          ].map(cat => (
-            <div key={cat.t} className="space-y-3">
-              <div className="flex items-center gap-2 px-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><cat.i size={12} /> {cat.t}</div>
-              <div className="space-y-2">
-                {cat.k.map(key => (
-                  <CompactTabInput key={key} label={key} value={config.tabNames[key as keyof SheetConfig['tabNames']]} onChange={(v: string) => onConfigChange({ ...config, tabNames: { ...config.tabNames, [key]: v } })} onSync={() => onSync([key as any])} sheetId={config.sheetId} isSyncing={syncingTabs.has(key)} />
-                ))}
+      {/* Phase 1 & 3: Year-End Maintenance */}
+      <div className="bg-white dark:bg-slate-800 border-2 border-blue-500/20 dark:border-blue-500/10 rounded-3xl p-8 shadow-xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none group-hover:bg-blue-500/10 transition-all"></div>
+          <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
+              <div className="p-5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-2xl border border-blue-500/20">
+                  <Zap size={32} />
               </div>
-            </div>
-          ))}
-        </div>
-        {syncStatus && (
-          <div className={`p-3 rounded-xl border text-[11px] font-bold flex items-center gap-2 ${syncStatus.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 text-emerald-600' : syncStatus.type === 'warning' ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 text-amber-600' : 'bg-red-50 dark:bg-red-500/10 border-red-200 text-red-600'}`}>
-            {syncStatus.type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />} {syncStatus.msg}
+              <div className="flex-1 text-center md:text-left space-y-1">
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white">Year-End Maintenance</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Ready to start a new financial chapter? This wizard will archive your current ledger and prepare a fresh, clean spreadsheet for the upcoming year.
+                  </p>
+              </div>
+              <button 
+                onClick={() => setIsRolloverOpen(true)}
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 py-4 rounded-2xl shadow-xl shadow-blue-500/20 transition-all hover:-translate-y-0.5 active:scale-[0.98] whitespace-nowrap"
+              >
+                  Close Financial Year {activeYear}
+              </button>
           </div>
-        )}
+
+          <RolloverStepper 
+              isOpen={isRolloverOpen} 
+              onClose={() => setIsRolloverOpen(false)} 
+              onSync={async (tabs) => onSync(tabs)}
+              sheetId={config.sheetId}
+              incomeTab={config.tabNames.income}
+              expenseTab={config.tabNames.expenses}
+              activeYear={activeYear}
+              onSuccess={(nextYear) => {
+                  onRolloverSuccess(nextYear);
+                  refreshArchives();
+              }}
+          />
       </div>
 
       {/* Cloud & Local Portability */}

@@ -2,7 +2,7 @@
 import React, { useMemo, useState, memo } from 'react';
 import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry, TimeFocus, Trade } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, BarChart, Bar, ReferenceLine, Line } from 'recharts';
-import { ArrowUpRight, DollarSign, Wallet, X, Loader2, TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Lock, Calendar, PiggyBank, BarChart3, Info, ArrowRight, Minus } from 'lucide-react';
+import { ArrowUpRight, DollarSign, Wallet, X, Loader2, TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Lock, Calendar, PiggyBank, BarChart3, Info, ArrowRight, Minus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { convertToBase, formatBaseCurrency, formatNativeCurrency, PRIMARY_CURRENCY } from '../services/currencyService';
 import { isSafeKey } from '../services/geminiService';
 import { isInvestmentAsset, isCashAsset } from '../services/classificationService';
@@ -21,6 +21,8 @@ interface DashboardProps {
   selectedYear?: number;
   timeFocus?: TimeFocus;
   onTimeFocusChange?: (focus: TimeFocus) => void;
+  availableYears?: number[];
+  onYearChange?: (year: number) => void;
 }
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f97316'];
@@ -73,7 +75,7 @@ const StatsCard = memo(({
                 
                 <div className="flex items-end justify-between">
                     <div>
-                        <h3 className="text-2xl font-bold text-slate-900 dark:text-white min-h-[2rem] flex items-center">
+                        <h3 className="text-2xl font-bold text-slate-900 dark:text-white min-h-[2rem] flex items-center ghost-blur">
                             {isLoading ? <div className="h-8 w-32 bg-slate-200 dark:bg-slate-700/50 rounded animate-pulse" /> : formatBaseCurrency(value)}
                         </h3>
                         {isHistorical ? (
@@ -84,7 +86,7 @@ const StatsCard = memo(({
                                     isPositive ? 'text-emerald-500' : isNegative ? 'text-red-500' : 'text-slate-400'
                                 }`}>
                                     {isPositive ? <TrendingUp size={14} /> : isNegative ? <TrendingDown size={14} /> : null}
-                                    <span>{isPositive ? '+' : ''}{change.toFixed(1)}%</span>
+                                    <span className="ghost-blur">{isPositive ? '+' : ''}{change.toFixed(1)}%</span>
                                     <span className="text-slate-400 font-medium ml-1">vs. last log</span>
                                 </div>
                             )
@@ -108,11 +110,7 @@ const WealthDriversCard = memo(({
     const isGain = attribution.marketGain >= 0;
     const isContributionPositive = attribution.netContributions >= 0;
     
-    // Clean up the text by replacing underscores with spaces
     const cleanFocus = timeFocus.replace(/_/g, ' ');
-
-    // Calculate visualization segments
-    // We normalize everything against the highest absolute value to ensure consistent layout
     const maxReference = Math.max(attribution.startValue + Math.abs(attribution.netContributions) + Math.abs(attribution.marketGain), attribution.endValue, 1);
     
     const startW = (attribution.startValue / maxReference) * 100;
@@ -139,34 +137,18 @@ const WealthDriversCard = memo(({
             </div>
 
             <div className="space-y-8 flex-1">
-                {/* Visual Waterfall-style Bar */}
                 <div className="space-y-3">
                     <div className="flex justify-between items-end">
                         <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Asset Distribution</span>
                         <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${isGain ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'}`}>
                             {isGain ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
-                            {isGain ? '+' : ''}{attribution.percentageReturn.toFixed(1)}% Return
+                            <span className="ghost-blur">{isGain ? '+' : ''}{attribution.percentageReturn.toFixed(1)}% Return</span>
                         </div>
                     </div>
                     <div className="h-6 w-full bg-slate-100 dark:bg-slate-900/50 rounded-xl overflow-hidden flex shadow-inner border border-slate-200/50 dark:border-slate-700/50">
-                        <div 
-                            className="h-full bg-blue-500/90 transition-all duration-1000 relative group/seg border-r border-white/10" 
-                            style={{ width: `${Math.max(2, startW)}%` }}
-                        >
-                             <div className="absolute inset-0 bg-white/10 opacity-0 group-hover/seg:opacity-100 transition-opacity" />
-                        </div>
-                        <div 
-                            className={`h-full transition-all duration-1000 relative group/seg border-r border-white/10 ${isContributionPositive ? 'bg-indigo-500/90' : 'bg-rose-500/90'}`}
-                            style={{ width: `${Math.max(2, savingsW)}%` }}
-                        >
-                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover/seg:opacity-100 transition-opacity" />
-                        </div>
-                        <div 
-                            className={`h-full transition-all duration-1000 relative group/seg ${isGain ? 'bg-emerald-500/90' : 'bg-red-500/90'}`}
-                            style={{ width: `${Math.max(2, gainW)}%` }}
-                        >
-                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover/seg:opacity-100 transition-opacity" />
-                        </div>
+                        <div className="h-full bg-blue-500/90 transition-all duration-1000 relative group/seg border-r border-white/10" style={{ width: `${Math.max(2, startW)}%` }}><div className="absolute inset-0 bg-white/10 opacity-0 group-hover/seg:opacity-100 transition-opacity" /></div>
+                        <div className={`h-full transition-all duration-1000 relative group/seg border-r border-white/10 ${isContributionPositive ? 'bg-indigo-500/90' : 'bg-rose-500/90'}`} style={{ width: `${Math.max(2, savingsW)}%` }}><div className="absolute inset-0 bg-white/10 opacity-0 group-hover/seg:opacity-100 transition-opacity" /></div>
+                        <div className={`h-full transition-all duration-1000 relative group/seg ${isGain ? 'bg-emerald-500/90' : 'bg-red-500/90'}`} style={{ width: `${Math.max(2, gainW)}%` }}><div className="absolute inset-0 bg-white/10 opacity-0 group-hover/seg:opacity-100 transition-opacity" /></div>
                     </div>
                     <div className="flex gap-4 justify-start px-1">
                         <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-sm bg-blue-500" /><span className="text-[9px] font-black text-slate-400 uppercase">Base</span></div>
@@ -175,7 +157,6 @@ const WealthDriversCard = memo(({
                     </div>
                 </div>
 
-                {/* Primary Metrics */}
                 <div className="grid grid-cols-1 gap-5">
                     <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800/50 group/row hover:bg-slate-100 dark:hover:bg-slate-900/50 transition-colors">
                         <div className="flex items-center gap-3">
@@ -187,14 +168,14 @@ const WealthDriversCard = memo(({
                                 <p className="text-xs font-bold text-slate-500">From Cash Flow</p>
                             </div>
                         </div>
-                        <p className={`text-lg font-black font-mono ${isContributionPositive ? 'text-slate-900 dark:text-white' : 'text-red-500'}`}>
+                        <p className={`text-lg font-black font-mono ghost-blur ${isContributionPositive ? 'text-slate-900 dark:text-white' : 'text-red-500'}`}>
                             {isLoading ? '---' : formatBaseCurrency(attribution.netContributions)}
                         </p>
                     </div>
 
                     <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800/50 group/row hover:bg-slate-100 dark:hover:bg-slate-900/50 transition-colors">
                         <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-xl group-hover/row:scale-110 transition-transform ${isGain ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-500'}`}>
+                            <div className={`p-2 rounded-xl group-hover/row:scale-110 transition-transform ${isGain ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'}`}>
                                 <TrendingUp size={18} />
                             </div>
                             <div>
@@ -202,7 +183,7 @@ const WealthDriversCard = memo(({
                                 <p className="text-xs font-bold text-slate-500">Capital Impact</p>
                             </div>
                         </div>
-                        <p className={`text-lg font-black font-mono ${isGain ? 'text-emerald-600' : 'text-red-600'}`}>
+                        <p className={`text-lg font-black font-mono ghost-blur ${isGain ? 'text-emerald-600' : 'text-red-600'}`}>
                             {isLoading ? '---' : (isGain ? '+' : '') + formatBaseCurrency(attribution.marketGain)}
                         </p>
                     </div>
@@ -217,13 +198,13 @@ const WealthDriversCard = memo(({
                                 Your total wealth at the anchor date ({cleanFocus}). All subsequent changes are measured against this baseline.
                             </div>
                         </div>
-                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 font-mono">
+                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 font-mono ghost-blur">
                             {isLoading ? '---' : formatBaseCurrency(attribution.startValue)}
                         </span>
                     </div>
                     <div className="flex items-center justify-between">
                          <span className="text-[10px] font-black uppercase text-slate-900 dark:text-white tracking-widest">Ending Balance</span>
-                         <span className="text-sm font-black text-slate-900 dark:text-white font-mono">
+                         <span className="text-sm font-black text-slate-900 dark:text-white font-mono ghost-blur">
                             {isLoading ? '---' : formatBaseCurrency(attribution.endValue)}
                         </span>
                     </div>
@@ -242,7 +223,9 @@ const NetWorthChart = memo(({
     onFocusChange,
     incomeData = [],
     expenseData = [],
-    startValue = 0
+    startValue = 0,
+    availableYears = [],
+    onYearChange
 }: { 
     data: NetWorthEntry[], 
     isDarkMode: boolean, 
@@ -252,31 +235,33 @@ const NetWorthChart = memo(({
     onFocusChange?: (focus: TimeFocus) => void,
     incomeData: IncomeEntry[],
     expenseData: ExpenseEntry[],
-    startValue: number
+    startValue: number,
+    availableYears: number[],
+    onYearChange?: (year: number) => void
 }) => {
     const axisColor = isDarkMode ? '#94a3b8' : '#64748b';
     const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
     const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
     const tooltipBorder = isDarkMode ? '#334155' : '#cbd5e1';
 
-    // Hide principal line for MTD and QTD as it is conceptually misleading in those short windows
-    const showPrincipal = timeFocus !== TimeFocus.MTD && timeFocus !== TimeFocus.QTD;
+    const isFullHistory = timeFocus === TimeFocus.FULL_YEAR;
+    // Show principal line only if we are focused on a specific year and it's not MTD/QTD
+    const showPrincipal = !isFullHistory && timeFocus !== TimeFocus.MTD && timeFocus !== TimeFocus.QTD;
 
     const filteredData = useMemo(() => {
-        const yearFiltered = data.filter(d => d.date.startsWith(String(selectedYear)));
-        // Logic: Time focusing (MTD/YTD) only makes sense relative to "today". 
-        // If we are looking at a historical archive, show the whole year regardless.
-        const windowData = (isHistorical || timeFocus === TimeFocus.FULL_YEAR) 
-            ? yearFiltered 
-            : yearFiltered.filter(d => isDateWithinFocus(d.date, timeFocus));
+        // If ALL/Full Year is selected, use all available data from historical records
+        const baseData = isFullHistory ? [...data].sort((a,b) => a.date.localeCompare(b.date)) : data.filter(d => d.date.startsWith(String(selectedYear)));
         
-        // Calculate cumulative savings for each point to show "Principal" vs "Gain"
+        // Apply focus window only if not viewing full history or historical archives
+        const windowData = (isHistorical || isFullHistory) 
+            ? baseData 
+            : baseData.filter(d => isDateWithinFocus(d.date, timeFocus));
+        
         const sortedIncome = [...incomeData].sort((a,b) => a.date.localeCompare(b.date));
         const sortedExpense = [...expenseData].sort((a,b) => a.date.localeCompare(b.date));
         
         return windowData.map(entry => {
             const date = entry.date;
-            // Savings = Income up to this date - Expenses up to this date
             const incomeToDate = sortedIncome.filter(i => i.date <= date && i.date.startsWith(String(selectedYear))).reduce((sum, i) => sum + i.amount, 0);
             const expenseToDate = sortedExpense.filter(e => e.date <= date && e.date.startsWith(String(selectedYear))).reduce((sum, e) => sum + e.total, 0);
             
@@ -287,42 +272,45 @@ const NetWorthChart = memo(({
                 gain: Math.max(0, entry.value - principal)
             };
         });
-    }, [data, selectedYear, isHistorical, timeFocus, incomeData, expenseData, startValue]);
+    }, [data, selectedYear, isHistorical, timeFocus, incomeData, expenseData, startValue, isFullHistory]);
 
-    const formatAxisDate = (str: string) => {
-        const d = parseISOToLocal(str);
-        return isNaN(d.getTime()) ? str : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    };
-    
-    const formatTooltipDate = (label: string) => {
-         const d = parseISOToLocal(label);
-         return isNaN(d.getTime()) ? label : d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+    const handleNextYear = () => {
+        if (!onYearChange || !availableYears.length) return;
+        const idx = availableYears.indexOf(selectedYear);
+        if (idx > 0) onYearChange(availableYears[idx - 1]);
     };
 
-    const formatYAxis = (val: number) => {
-        if (val >= 1000000) return `$${(val/1000000).toFixed(1)}M`;
-        if (val >= 1000) return `$${(val/1000).toFixed(0)}k`;
-        return `$${val}`;
+    const handlePrevYear = () => {
+        if (!onYearChange || !availableYears.length) return;
+        const idx = availableYears.indexOf(selectedYear);
+        if (idx < availableYears.length - 1) onYearChange(availableYears[idx + 1]);
     };
 
     return (
         <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[480px] shadow-sm transition-colors relative overflow-hidden group">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 relative z-10">
-                <div>
-                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <div className="space-y-1">
+                    <div className="flex items-center gap-3">
                         <TrendingUp size={20} className="text-emerald-500 dark:text-emerald-400" />
-                        Net Worth History
-                    </h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                        {showPrincipal ? "Principal vs. Market Growth" : "Market Valuation Trend"}
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Net Worth History</h3>
+                        {!isFullHistory && (
+                            <div className="flex items-center bg-slate-100 dark:bg-slate-900 rounded-lg p-0.5 border border-slate-200 dark:border-slate-700 ml-2">
+                                <button onClick={handlePrevYear} disabled={availableYears.indexOf(selectedYear) === availableYears.length - 1} className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-600 dark:hover:text-white disabled:opacity-20"><ChevronLeft size={14}/></button>
+                                <span className="px-2 text-[10px] font-black text-slate-900 dark:text-white">{selectedYear}</span>
+                                <button onClick={handleNextYear} disabled={availableYears.indexOf(selectedYear) === 0} className="p-1 hover:bg-white dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-600 dark:hover:text-white disabled:opacity-20"><ChevronRight size={14}/></button>
+                            </div>
+                        )}
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        {isFullHistory ? "Lifetime Valuation Trail" : showPrincipal ? "Principal vs. Market Growth" : "Market Valuation Trend"}
                     </p>
                 </div>
                 {!isHistorical && onFocusChange && (
                     <TimeFocusSelector current={timeFocus} onChange={onFocusChange} />
                 )}
-                {isHistorical && (
-                    <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 dark:bg-slate-700/50 rounded-lg text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                        <Calendar size={12} /> {selectedYear} ARCHIVE
+                {isHistorical && !isFullHistory && (
+                    <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 rounded-lg text-[10px] font-black uppercase text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                        <Calendar size={12} /> ARCHIVE VIEW
                     </div>
                 )}
             </div>
@@ -331,77 +319,47 @@ const NetWorthChart = memo(({
                     <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={filteredData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                             <defs>
-                                <linearGradient id="colorPrincipal" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.05}/>
-                                </linearGradient>
-                                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                                </linearGradient>
+                                <linearGradient id="colorPrincipal" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0.05}/></linearGradient>
+                                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={isHistorical ? "#f59e0b" : "#10b981"} stopOpacity={0.3}/><stop offset="95%" stopColor={isHistorical ? "#f59e0b" : "#10b981"} stopOpacity={0}/></linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                             <XAxis 
                                 dataKey="date" 
-                                tickFormatter={formatAxisDate}
-                                stroke={axisColor}
-                                tick={{fontSize: 11, fill: axisColor}}
-                                tickMargin={10}
-                                minTickGap={40}
-                                axisLine={false}
-                                tickLine={false}
+                                tickFormatter={(str) => { 
+                                    const d = parseISOToLocal(str); 
+                                    if (isNaN(d.getTime())) return str;
+                                    // If viewing all time, include the year in the label for context
+                                    return isFullHistory 
+                                        ? d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
+                                        : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); 
+                                }} 
+                                stroke={axisColor} 
+                                tick={{fontSize: 11, fill: axisColor}} 
+                                tickMargin={10} 
+                                minTickGap={40} 
+                                axisLine={false} 
+                                tickLine={false} 
                             />
-                            <YAxis 
-                                stroke={axisColor}
-                                tick={{fontSize: 11, fill: axisColor}}
-                                tickFormatter={formatYAxis}
-                                domain={['auto', 'auto']}
-                                axisLine={false}
-                                tickLine={false}
-                                width={50}
-                            />
+                            <YAxis stroke={axisColor} tick={{fontSize: 11, fill: axisColor}} tickFormatter={(val) => val >= 1000000 ? `$${(val/1000000).toFixed(1)}M` : val >= 1000 ? `$${(val/1000).toFixed(0)}k` : `$${val}`} domain={['auto', 'auto']} axisLine={false} tickLine={false} width={50} />
                             <Tooltip 
-                                contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.8rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', border: '1px solid ' + tooltipBorder }}
-                                itemStyle={{ fontWeight: 600 }}
-                                labelStyle={{ color: axisColor, marginBottom: '8px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' }}
+                                contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.8rem' }} 
+                                itemStyle={{ fontWeight: 600 }} 
+                                labelStyle={{ color: axisColor, marginBottom: '8px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' }} 
                                 formatter={(value: number, name: string) => {
-                                    if (name === 'value') return [formatBaseCurrency(value), "Total NW"];
-                                    if (name === 'principal') return [formatBaseCurrency(value), "Principal"];
-                                    return [formatBaseCurrency(value), name];
-                                }}
-                                labelFormatter={formatTooltipDate}
-                                cursor={{ stroke: axisColor, strokeWidth: 1, strokeDasharray: '4 4' }}
+                                    const valStr = formatBaseCurrency(value);
+                                    const label = name === 'value' ? "Total NW" : name === 'principal' ? "Principal" : name;
+                                    return [<span className="ghost-blur">{valStr}</span>, label];
+                                }} 
+                                labelFormatter={(label: string) => { const d = parseISOToLocal(label); return isNaN(d.getTime()) ? label : d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }); }} cursor={{ stroke: axisColor, strokeWidth: 1, strokeDasharray: '4 4' }} 
                             />
-                            {showPrincipal && (
-                                <Area 
-                                    type="monotone" 
-                                    dataKey="principal" 
-                                    stroke="#3b82f6" 
-                                    strokeWidth={2}
-                                    strokeDasharray="5 5"
-                                    fillOpacity={1} 
-                                    fill="url(#colorPrincipal)" 
-                                    animationDuration={1000}
-                                    activeDot={false}
-                                />
-                            )}
-                            <Area 
-                                type="monotone" 
-                                dataKey="value" 
-                                stroke={isHistorical ? "#94a3b8" : "#10b981"} 
-                                strokeWidth={3}
-                                fillOpacity={1} 
-                                fill="url(#colorValue)" 
-                                animationDuration={1500}
-                                activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }}
-                            />
+                            {showPrincipal && <Area type="monotone" dataKey="principal" stroke="#3b82f6" strokeWidth={2} strokeDasharray="5 5" fillOpacity={1} fill="url(#colorPrincipal)" animationDuration={1000} activeDot={false} />}
+                            <Area type="monotone" dataKey="value" stroke={isHistorical ? "#f59e0b" : "#10b981"} strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" animationDuration={1500} activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }} />
                         </AreaChart>
                     </ResponsiveContainer>
                 ) : (
                     <div className="h-full flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-xl bg-slate-50 dark:bg-slate-800/20">
                         <TrendingUp className="opacity-20 mb-3" size={48} />
-                        <p className="font-medium text-center px-4">Insufficient data for {timeFocus} window.</p>
-                        <p className="text-xs mt-1 text-slate-600 dark:text-slate-400">Log more Net Worth snapshots to see trends.</p>
+                        <p className="font-medium text-center px-4">Insufficient data for {selectedYear}.</p>
                     </div>
                 )}
             </div>
@@ -419,8 +377,8 @@ const IncomeChart = memo(({ data, isDarkMode, isHistorical }: { data: any[], isD
     return (
         <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 h-[380px] flex flex-col shadow-sm transition-colors relative overflow-hidden">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                <Scale size={20} className="text-blue-500 dark:text-blue-400" />
-                Net Income Trend {isHistorical && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500">ARCHIVE</span>}
+                <Scale size={20} className={isHistorical ? 'text-amber-500' : 'text-blue-500 dark:text-blue-400'} />
+                Net Income Trend {isHistorical && <span className="text-[10px] bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded text-amber-600">ARCHIVE</span>}
             </h3>
             <div className="flex-1 w-full min-h-0">
                 {data.length > 0 ? (
@@ -430,17 +388,15 @@ const IncomeChart = memo(({ data, isDarkMode, isHistorical }: { data: any[], isD
                             <XAxis dataKey="monthStr" stroke={axisColor} tick={{fontSize: 11}} axisLine={false} tickLine={false} />
                             <YAxis stroke={axisColor} tick={{fontSize: 11}} tickFormatter={(val) => `$${val/1000}k`} axisLine={false} tickLine={false} />
                             <Tooltip 
-                                contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.5rem'}}
-                                itemStyle={{ color: tooltipText, fontWeight: 600 }}
-                                labelStyle={{ color: axisColor, marginBottom: '4px', fontSize: '12px' }}
-                                formatter={(val: number) => [formatBaseCurrency(val), 'Net Income']}
+                                contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.5rem'}} 
+                                itemStyle={{ color: tooltipText, fontWeight: 600 }} 
+                                labelStyle={{ color: axisColor, marginBottom: '4px', fontSize: '12px' }} 
+                                formatter={(val: number) => [<span className="ghost-blur">{formatBaseCurrency(val)}</span>, 'Net Income']} 
                                 cursor={{fill: gridColor, opacity: 0.3}} 
                             />
                             <ReferenceLine y={0} stroke="#64748b" />
                             <Bar dataKey="net" maxBarSize={40} radius={[4, 4, 0, 0]} animationDuration={1000}>
-                                {data.map((e, i) => (
-                                    <Cell key={i} fill={e.net >= 0 ? (isHistorical ? '#64748b' : '#10b981') : '#ef4444'} />
-                                ))}
+                                {data.map((e, i) => <Cell key={i} fill={e.net >= 0 ? (isHistorical ? '#f59e0b' : '#10b981') : '#ef4444'} />)}
                             </Bar>
                         </BarChart>
                     </ResponsiveContainer>
@@ -468,48 +424,27 @@ const AllocationChart = memo(({ data, selectedCategory, onSelect, isDarkMode }: 
                     <PieIcon size={20} className="text-purple-500 dark:text-purple-400" /> Asset Allocation
                 </h3>
                 {selectedCategory && (
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); onSelect(null); }}
-                        className="text-[10px] flex items-center gap-1 px-2 py-1 bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded-lg border border-purple-500/30 hover:bg-purple-500/30 transition-colors"
-                    >
+                    <button onClick={(e) => { e.stopPropagation(); onSelect(null); }} className="text-[10px] flex items-center gap-1 px-2 py-1 bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded-lg border border-purple-500/30 hover:bg-purple-500/30 transition-colors">
                         {selectedCategory} <X size={10} />
                     </button>
                 )}
             </div>
-            
             <div className="flex-1 w-full min-h-0 relative">
                 {data.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                            <Pie
-                                data={data}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={60}
-                                outerRadius={90}
-                                paddingAngle={4}
-                                dataKey="value"
-                                onClick={(entry) => onSelect(entry.name === selectedCategory ? null : entry.name)}
-                                className="cursor-pointer focus:outline-none"
-                            >
-                                {data.map((entry, index) => (
-                                    <Cell 
-                                        key={`cell-${index}`} 
-                                        fill={COLORS[index % COLORS.length]} 
-                                        stroke={entry.name === selectedCategory ? (isDarkMode ? '#fff' : '#000') : 'none'}
-                                        strokeWidth={2}
-                                        opacity={selectedCategory && selectedCategory !== entry.name ? 0.3 : 1}
-                                    />
-                                ))}
+                            <Pie data={data} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={4} dataKey="value" onClick={(entry) => onSelect(entry.name === selectedCategory ? null : entry.name)} className="cursor-pointer focus:outline-none">
+                                {data.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke={entry.name === selectedCategory ? (isDarkMode ? '#fff' : '#000') : 'none'} strokeWidth={2} opacity={selectedCategory && selectedCategory !== entry.name ? 0.3 : 1} />)}
                             </Pie>
                             <Tooltip 
-                                contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.5rem' }}
-                                itemStyle={{ color: tooltipText, fontWeight: 600 }}
-                                labelStyle={{ color: labelColor }}
-                                formatter={(value: number) => {
-                                    const total = data.reduce((acc, c) => acc + c.value, 0);
-                                    return [`${formatBaseCurrency(value)} (${((value/total)*100).toFixed(1)}%)`];
-                                }}
+                                backgroundColor={tooltipBg}
+                                contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.5rem' }} 
+                                itemStyle={{ color: tooltipText, fontWeight: 600 }} 
+                                labelStyle={{ color: labelColor }} 
+                                formatter={(value: number) => { 
+                                    const total = data.reduce((acc, c) => acc + c.value, 0); 
+                                    return [<span className="ghost-blur">{formatBaseCurrency(value)} ({((value/total)*100).toFixed(1)}%)</span>]; 
+                                }} 
                             />
                         </PieChart>
                     </ResponsiveContainer>
@@ -519,15 +454,9 @@ const AllocationChart = memo(({ data, selectedCategory, onSelect, isDarkMode }: 
                         <p className="font-medium">No asset data found.</p>
                     </div>
                 )}
-                
                 {data.length > 0 && !selectedCategory && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="text-center">
-                            <p className="text-xs text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">Total</p>
-                            <p className="text-sm font-bold text-slate-900 dark:text-white">
-                                {formatBaseCurrency(data.reduce((acc, c) => acc + c.value, 0))}
-                            </p>
-                        </div>
+                        <div className="text-center"><p className="text-xs text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">Total</p><p className="text-sm font-bold text-slate-900 dark:text-white ghost-blur">{formatBaseCurrency(data.reduce((acc, c) => acc + c.value, 0))}</p></div>
                     </div>
                 )}
             </div>
@@ -538,12 +467,8 @@ const AllocationChart = memo(({ data, selectedCategory, onSelect, isDarkMode }: 
 const DrilldownView = memo(({ category, assets, exchangeRates }: { category: string, assets: Asset[], exchangeRates?: ExchangeRates }) => (
     <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 animate-fade-in mt-6 shadow-sm transition-colors">
         <div className="flex justify-between items-center mb-4 border-b border-slate-200 dark:border-slate-700/50 pb-2">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span className="w-2 h-6 bg-purple-500 rounded-full"></span>
-                {category} Breakdown
-            </h3>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2"><span className="w-2 h-6 bg-purple-500 rounded-full"></span>{category} Breakdown</h3>
         </div>
-        
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {assets.map(asset => {
                 const baseValue = convertToBase(asset.value, asset.currency, exchangeRates);
@@ -554,21 +479,11 @@ const DrilldownView = memo(({ category, assets, exchangeRates }: { category: str
                             <div className="min-w-0 pr-3">
                                 <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate" title={asset.name}>{asset.name}</p>
                                 <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-[10px] bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-medium border border-slate-100 dark:border-slate-700">
-                                        {asset.currency || PRIMARY_CURRENCY}
-                                    </span>
-                                    {isForeign && (
-                                         <span className="text-[10px] text-slate-500 dark:text-slate-600">
-                                            {formatNativeCurrency(asset.value, asset.currency)}
-                                         </span>
-                                    )}
+                                    <span className="text-[10px] bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-medium border border-slate-100 dark:border-slate-700">{asset.currency || PRIMARY_CURRENCY}</span>
+                                    {isForeign && <span className="text-[10px] text-slate-500 dark:text-slate-600 ghost-blur">{formatNativeCurrency(asset.value, asset.currency)}</span>}
                                 </div>
                             </div>
-                            <div className="text-right">
-                                <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                                    {formatBaseCurrency(baseValue)}
-                                </p>
-                            </div>
+                            <div className="text-right"><p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap ghost-blur">{formatBaseCurrency(baseValue)}</p></div>
                         </div>
                     </div>
                 );
@@ -588,7 +503,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     isDarkMode = true,
     selectedYear = new Date().getFullYear(),
     timeFocus = TimeFocus.FULL_YEAR,
-    onTimeFocusChange
+    onTimeFocusChange,
+    availableYears = [],
+    onYearChange
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const isHistorical = selectedYear !== new Date().getFullYear();
@@ -596,45 +513,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const { netWorth, totalInvestments, totalCash, allocationData } = useMemo(() => {
     let nw = 0, inv = 0, cash = 0;
     const groups: Record<string, number> = {};
-
     assets.forEach(asset => {
       const baseVal = convertToBase(asset.value, asset.currency, exchangeRates);
       nw += baseVal;
       if (isInvestmentAsset(asset)) inv += baseVal;
       if (isCashAsset(asset)) cash += baseVal;
-      
       const type = asset.type || 'Other';
-      if (isSafeKey(type)) {
-        groups[type] = (groups[type] || 0) + baseVal;
-      }
+      if (isSafeKey(type)) groups[type] = (groups[type] || 0) + baseVal;
     });
-
-    const alloc = Object.entries(groups)
-        .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value);
-
-    return {
-      netWorth: nw,
-      totalInvestments: inv,
-      totalCash: cash,
-      allocationData: alloc
-    };
+    const alloc = Object.entries(groups).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+    return { netWorth: nw, totalInvestments: inv, totalCash: cash, allocationData: alloc };
   }, [assets, exchangeRates]);
 
-  const attributionData = useMemo(() => {
-    return calculateAttribution(netWorth, netWorthHistory, incomeData, expenseData, timeFocus);
-  }, [netWorth, netWorthHistory, incomeData, expenseData, timeFocus]);
+  const attributionData = useMemo(() => calculateAttribution(netWorth, netWorthHistory, incomeData, expenseData, timeFocus), [netWorth, netWorthHistory, incomeData, expenseData, timeFocus]);
 
   const netWorthChange = useMemo(() => {
     if (netWorthHistory.length < 1) return null;
-    const sorted = [...netWorthHistory]
-        .filter(d => d.date.startsWith(String(selectedYear)))
-        .sort((a, b) => b.date.localeCompare(a.date));
-    
+    const sorted = [...netWorthHistory].filter(d => d.date.startsWith(String(selectedYear))).sort((a, b) => b.date.localeCompare(a.date));
     if (sorted.length === 0) return null;
     const latestLoggedValue = sorted[0].value;
     if (latestLoggedValue === 0) return null;
-    
     return ((netWorth - latestLoggedValue) / latestLoggedValue) * 100;
   }, [netWorth, netWorthHistory, selectedYear]);
 
@@ -648,62 +546,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
       };
       incomeData.forEach(d => merge(d.date, d.monthStr, d.amount, 0));
       expenseData.forEach(d => merge(d.date, d.monthStr, 0, d.total));
-      return Array.from(map.values())
-          .sort((a, b) => a.date.localeCompare(b.date))
-          .map(d => ({ ...d, net: d.income - d.expense }))
-          .slice(-12);
+      return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date)).map(d => ({ ...d, net: d.income - d.expense })).slice(-12);
   }, [incomeData, expenseData, selectedYear]);
 
-  const selectedAssets = useMemo(() => {
-      return selectedCategory ? assets.filter(a => (a.type || 'Other') === selectedCategory) : [];
-  }, [assets, selectedCategory]);
-
-  const chartData = useMemo(() => {
-      return [...netWorthHistory].sort((a, b) => a.date.localeCompare(b.date));
-  }, [netWorthHistory]);
+  const chartData = useMemo(() => [...netWorthHistory].sort((a, b) => a.date.localeCompare(b.date)), [netWorthHistory]);
 
   return (
     <div className="space-y-8 animate-fade-in">
       <header className="mb-2">
         <h2 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
             Dashboard
-            {isLoading && (
-                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20">
-                    <Loader2 className="animate-spin text-blue-500 dark:text-blue-400" size={18} />
-                    <span className="text-xs font-medium text-blue-500 dark:text-blue-400">Updating...</span>
-                </div>
-            )}
+            {isLoading && <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20"><Loader2 className="animate-spin text-blue-500 dark:text-blue-400" size={18} /><span className="text-xs font-medium text-blue-500 dark:text-blue-400">Updating...</span></div>}
         </h2>
-        <p className="text-slate-500 dark:text-slate-400">Overview for {selectedYear} in {PRIMARY_CURRENCY}.</p>
+        <p className="text-slate-500 dark:text-slate-400">Financial health overview in {PRIMARY_CURRENCY}.</p>
       </header>
 
       <div className={`transition-all duration-500 space-y-6 ${isLoading ? 'opacity-60 grayscale-[0.3] pointer-events-none' : 'opacity-100'}`}>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <StatsCard title="Year-End Net Worth" value={netWorth} icon={DollarSign} color="blue" isLoading={isLoading} change={netWorthChange} isHistorical={isHistorical} />
+            <StatsCard title="Current Net Worth" value={netWorth} icon={DollarSign} color="blue" isLoading={isLoading} change={netWorthChange} isHistorical={isHistorical} />
             <StatsCard title="Total Portfolio" value={totalInvestments} icon={ArrowUpRight} color="emerald" isLoading={isLoading} isHistorical={isHistorical} />
             <StatsCard title="Total Liquidity" value={totalCash} icon={Wallet} color="purple" isLoading={isLoading} isHistorical={isHistorical} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
-                <NetWorthChart 
-                    data={chartData} 
-                    isDarkMode={isDarkMode} 
-                    selectedYear={selectedYear} 
-                    isHistorical={isHistorical}
-                    timeFocus={timeFocus}
-                    onFocusChange={onTimeFocusChange}
-                    incomeData={incomeData}
-                    expenseData={expenseData}
-                    startValue={attributionData.startValue}
-                />
+                <NetWorthChart data={chartData} isDarkMode={isDarkMode} selectedYear={selectedYear} isHistorical={isHistorical} timeFocus={timeFocus} onFocusChange={onTimeFocusChange} incomeData={incomeData} expenseData={expenseData} startValue={attributionData.startValue} availableYears={availableYears} onYearChange={onYearChange} />
             </div>
             <div className="lg:col-span-1">
-                <WealthDriversCard 
-                    attribution={attributionData}
-                    isLoading={isLoading}
-                    timeFocus={timeFocus}
-                />
+                <WealthDriversCard attribution={attributionData} isLoading={isLoading} timeFocus={timeFocus} />
             </div>
         </div>
 
@@ -712,21 +582,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <IncomeChart data={netIncomeData} isDarkMode={isDarkMode} isHistorical={isHistorical} />
             </div>
             <div className="lg:col-span-1">
-                <AllocationChart 
-                    data={allocationData} 
-                    selectedCategory={selectedCategory} 
-                    onSelect={setSelectedCategory} 
-                    isDarkMode={isDarkMode}
-                />
+                <AllocationChart data={allocationData} selectedCategory={selectedCategory} onSelect={setSelectedCategory} isDarkMode={isDarkMode} />
             </div>
         </div>
 
-        {selectedCategory && selectedAssets.length > 0 && (
-            <DrilldownView 
-                category={selectedCategory} 
-                assets={selectedAssets} 
-                exchangeRates={exchangeRates} 
-            />
+        {selectedCategory && allocationData.length > 0 && (
+            <DrilldownView category={selectedCategory} assets={assets.filter(a => (a.type || 'Other') === selectedCategory)} exchangeRates={exchangeRates} />
         )}
       </div>
     </div>

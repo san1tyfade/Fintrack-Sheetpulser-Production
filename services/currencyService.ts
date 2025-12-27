@@ -3,20 +3,6 @@ import { ExchangeRates } from '../types';
 
 export const PRIMARY_CURRENCY = 'CAD';
 
-// Fallback rates in case API fails
-const DEFAULT_RATES: ExchangeRates = {
-  'CAD': 1.0,
-  'USD': 1.38,
-  'EUR': 1.50,
-  'GBP': 1.75,
-  'AUD': 0.91,
-  'JPY': 0.0092,
-  'CNY': 0.19,
-  'INR': 0.016,
-  'CHF': 1.55,
-  'MXN': 0.08
-};
-
 /**
  * Fetches real-time exchange rates relative to CAD from Frankfurter API.
  * Converts "1 CAD = X Foreign" (API format) to "1 Foreign = X CAD" (Multiplier format).
@@ -42,17 +28,18 @@ export const fetchLiveRates = async (): Promise<ExchangeRates> => {
     
     return rates;
   } catch (error) {
-    console.warn('Currency API failed, using fallbacks:', error);
-    return DEFAULT_RATES;
+    console.warn('Currency API failed:', error);
+    // Absolute minimum requirement for local operation
+    return { 'CAD': 1.0 };
   }
 };
 
-export const convertToBase = (amount: number, currency: string = 'CAD', rates: ExchangeRates = DEFAULT_RATES): number => {
+export const convertToBase = (amount: number, currency: string = 'CAD', rates?: ExchangeRates): number => {
   if (!currency) return amount;
   const code = currency.toUpperCase().trim();
   
-  // Use provided rates map or fallback to defaults
-  const rate = rates[code] !== undefined ? rates[code] : 1.0; 
+  // Use provided rates map or fallback to 1.0 (no conversion)
+  const rate = (rates && rates[code] !== undefined) ? rates[code] : 1.0; 
   
   return amount * rate;
 };

@@ -2,7 +2,7 @@
 import React, { useMemo, memo, useState, useEffect } from 'react';
 import { TaxRecord } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Landmark, Sparkles, Briefcase, History, Info, AlertCircle, TrendingUp, Plus, Pencil, Trash2, X, Save, Loader2 } from 'lucide-react';
+import { ShieldCheck, Landmark, Sparkles, History, Info, Plus, Pencil, Trash2, X, Save, Loader2, ArrowUpRight, ArrowDownRight, Coins, GraduationCap, Lock } from 'lucide-react';
 import { formatBaseCurrency } from '../services/currencyService';
 
 interface TaxRoomTrackerProps {
@@ -13,14 +13,16 @@ interface TaxRoomTrackerProps {
   onDeleteTaxRecord?: (rec: TaxRecord) => Promise<void>;
 }
 
-interface AccountStat {
-    used: number;
-    remaining: number;
-    totalLimit: number;
-    withdrawalsThisYear: number;
-}
+// Support for more account types found in typical tax-advantaged portfolios
+const ACCOUNTS = ['TFSA', 'RRSP', 'FHSA', 'LAPP', 'RESP'];
+const SUMMARY_ACCOUNTS = ['TFSA', 'RRSP', 'FHSA']; // Only show room tracking cards for these
 
-// --- Modals ---
+// Mapping logic for transaction labels commonly used in spreadsheets
+const LIMIT_TYPES = ['LIMIT', 'LIMIT INCREASE', 'OPENING BALANCE', 'INCREASE'];
+const CONTRIBUTION_TYPES = ['CONTRIBUTION', 'DEPOSIT'];
+const WITHDRAWAL_TYPES = ['WITHDRAWAL', 'WITHDRAW'];
+
+// --- Sub-Component: TaxRecordModal ---
 
 const TaxRecordModal = ({ isOpen, onClose, onSave, initialData, defaultAccount }: { 
     isOpen: boolean, 
@@ -40,17 +42,19 @@ const TaxRecordModal = ({ isOpen, onClose, onSave, initialData, defaultAccount }
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
-        if (isOpen && initialData) {
-            setFormData(initialData);
-        } else if (isOpen) {
-            setFormData({
-                recordType: defaultAccount,
-                transactionType: 'Contribution',
-                date: new Date().toISOString().split('T')[0],
-                value: 0,
-                description: '',
-                accountFund: defaultAccount
-            });
+        if (isOpen) {
+            if (initialData) {
+                setFormData(initialData);
+            } else {
+                setFormData({
+                    recordType: defaultAccount,
+                    transactionType: 'Contribution',
+                    date: new Date().toISOString().split('T')[0],
+                    value: 0,
+                    description: '',
+                    accountFund: defaultAccount
+                });
+            }
         }
     }, [isOpen, initialData, defaultAccount]);
 
@@ -66,80 +70,90 @@ const TaxRecordModal = ({ isOpen, onClose, onSave, initialData, defaultAccount }
                 rowIndex: initialData?.rowIndex
             });
             onClose();
-        } catch (e) { alert(e); }
-        finally { setIsSubmitting(false); }
+        } catch (e: any) { 
+            alert(e.message || "Failed to save record"); 
+        } finally { 
+            setIsSubmitting(false); 
+        }
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
-                    <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
-                        {initialData ? <Pencil size={18} /> : <Plus size={18} />}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+                    <h3 className="font-black text-lg text-slate-900 dark:text-white flex items-center gap-3">
+                        {initialData ? <div className="p-2 bg-blue-500/10 rounded-xl text-blue-500"><Pencil size={18} /></div> : <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-500"><Plus size={18} /></div>}
                         {initialData ? 'Edit Record' : 'New Record'}
                     </h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-white"><X size={20} /></button>
+                    <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
+                        <X size={24} />
+                    </button>
                 </div>
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <form onSubmit={handleSubmit} className="p-8 space-y-6">
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Account Type</label>
+                        <div className="space-y-1.5">
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Account</label>
                             <select 
                                 value={formData.recordType} 
                                 onChange={e => setFormData({...formData, recordType: e.target.value, accountFund: e.target.value})} 
-                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none"
+                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
                             >
-                                <option value="TFSA">TFSA</option>
-                                <option value="FHSA">FHSA</option>
-                                <option value="RRSP">RRSP</option>
-                                <option value="PENSION">Pension</option>
+                                {ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
                             </select>
                         </div>
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
-                            <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none" required />
+                        <div className="space-y-1.5">
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Date</label>
+                            <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none font-medium" required />
                         </div>
                     </div>
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Transaction Type</label>
-                        <select 
-                            value={formData.transactionType} 
-                            onChange={e => setFormData({...formData, transactionType: e.target.value})} 
-                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none"
-                        >
-                            <option value="Contribution">Contribution</option>
-                            <option value="Withdrawal">Withdrawal</option>
-                            <option value="Limit Increase">Limit Increase</option>
-                            <option value="Opening Balance">Opening Balance</option>
-                        </select>
+                    
+                    <div className="space-y-1.5">
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Transaction Type</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {['Contribution', 'Withdrawal', 'Limit', 'Increase'].map(type => (
+                                <button
+                                    key={type}
+                                    type="button"
+                                    onClick={() => setFormData({...formData, transactionType: type})}
+                                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                                        formData.transactionType === type
+                                        ? 'bg-blue-600 border-blue-600 text-white shadow-md'
+                                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-400'
+                                    }`}
+                                >
+                                    {type}
+                                </button>
+                            ))}
+                        </div>
                     </div>
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Value</label>
-                        <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+
+                    <div className="space-y-1.5">
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Amount</label>
+                        <div className="relative group">
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs group-focus-within:text-blue-500 transition-colors">$</span>
                             <input 
                                 type="number" 
                                 step="any" 
                                 value={formData.value || ''} 
                                 onChange={e => setFormData({...formData, value: parseFloat(e.target.value)})} 
-                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-3 py-2 text-sm font-mono outline-none" 
+                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl pl-8 pr-4 py-4 text-lg font-black font-mono outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-inner" 
+                                placeholder="0.00"
                                 required 
                             />
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-1 italic">Use negative values for literal withdrawals if tracking spent capital.</p>
                     </div>
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
+                    <div className="space-y-1.5">
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Description / Memo</label>
                         <textarea 
                             value={formData.description} 
                             onChange={e => setFormData({...formData, description: e.target.value})} 
-                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm outline-none min-h-[60px]" 
-                            placeholder="Details about this transaction..."
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-xs font-medium outline-none min-h-[100px] focus:ring-2 focus:ring-blue-500 transition-all" 
+                            placeholder="Optional notes e.g. 'Bonus Contribution'..."
                         />
                     </div>
-                    <button type="submit" disabled={isSubmitting} className="w-full mt-4 bg-slate-900 dark:bg-slate-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50">
+                    <button type="submit" disabled={isSubmitting} className="w-full bg-slate-900 dark:bg-white dark:text-slate-900 text-white font-black uppercase text-[11px] tracking-[0.2em] py-5 rounded-2xl flex items-center justify-center gap-3 shadow-2xl hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50">
                         {isSubmitting ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                        {initialData ? 'Update Record' : 'Add Record'}
+                        {initialData ? 'Update Entry' : 'Add to Ledger'}
                     </button>
                 </form>
             </div>
@@ -147,20 +161,12 @@ const TaxRecordModal = ({ isOpen, onClose, onSave, initialData, defaultAccount }
     );
 };
 
-// --- Sub-Components ---
+// --- Sub-Component: Room Summary Card ---
 
-const AccountRoomCard = memo(({ 
-    label, 
-    used, 
-    remaining, 
-    totalLimit, 
-    color 
+const RoomCard = memo(({ 
+    label, used, remaining, totalLimit, color 
 }: { 
-    label: string, 
-    used: number, 
-    remaining: number, 
-    totalLimit: number, 
-    color: string 
+    label: string, used: number, remaining: number, totalLimit: number, color: string 
 }) => {
     const data = [
         { name: 'Used', value: Math.max(0, used) },
@@ -170,31 +176,33 @@ const AccountRoomCard = memo(({
     
     const getIcon = () => {
         const l = label.toUpperCase();
-        if (l.includes('TFSA')) return <ShieldCheck size={24} />;
-        if (l.includes('FHSA')) return <Landmark size={24} />;
-        if (l.includes('RRSP')) return <Sparkles size={24} />;
-        return <Briefcase size={24} />;
+        if (l === 'TFSA') return <ShieldCheck size={24} />;
+        if (l === 'FHSA') return <Landmark size={24} />;
+        if (l === 'RRSP') return <Sparkles size={24} />;
+        if (l === 'RESP') return <GraduationCap size={24} />;
+        if (l === 'LAPP' || l === 'PENSION') return <Coins size={24} />;
+        return <Landmark size={24} />;
     };
 
     return (
-        <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 flex flex-col shadow-sm dark:shadow-lg transition-all hover:border-blue-400/30 dark:hover:border-slate-700">
-            <div className="flex justify-between items-start mb-10">
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[2.5rem] p-8 flex flex-col shadow-sm transition-all hover:border-blue-400/30 group">
+            <div className="flex justify-between items-start mb-8">
                 <div className="flex items-center gap-4">
-                    <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl text-slate-400 dark:text-slate-500" style={{ color: pctUsed > 0 ? color : undefined }}>
+                    <div className="p-3 bg-slate-100 dark:bg-slate-900 rounded-2xl transition-colors group-hover:bg-blue-500/10" style={{ color: pctUsed > 0 ? color : undefined }}>
                         {getIcon()}
                     </div>
                     <div>
                         <h4 className="text-xl font-black text-slate-900 dark:text-white leading-none">{label}</h4>
-                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">Room Tracker</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5">Contribution Room</p>
                     </div>
                 </div>
-                <div className="relative w-16 h-16">
+                <div className="relative w-14 h-14">
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                             <Pie
                                 data={data}
-                                innerRadius={22}
-                                outerRadius={28}
+                                innerRadius={20}
+                                outerRadius={26}
                                 paddingAngle={0}
                                 dataKey="value"
                                 startAngle={90}
@@ -202,256 +210,246 @@ const AccountRoomCard = memo(({
                                 stroke="none"
                             >
                                 <Cell fill={color} />
-                                <Cell fill="currentColor" className="text-slate-100 dark:text-slate-800" />
+                                <Cell fill="currentColor" className="text-slate-100 dark:text-slate-900" />
                             </Pie>
                         </PieChart>
                     </ResponsiveContainer>
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <span className="text-[10px] font-black text-slate-900 dark:text-white">{Math.round(pctUsed)}%</span>
+                        <span className="text-[9px] font-black text-slate-900 dark:text-white">{Math.round(pctUsed)}%</span>
                     </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-8">
+            <div className="grid grid-cols-2 gap-4 mb-6">
                 <div>
-                    <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">Used</p>
-                    <p className="text-lg font-bold text-slate-900 dark:text-white font-mono">{formatBaseCurrency(used)}</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Used</p>
+                    <p className="text-lg font-black text-slate-900 dark:text-white font-mono">{formatBaseCurrency(used)}</p>
                 </div>
                 <div className="text-right">
-                    <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">Remaining</p>
-                    <p className="text-lg font-bold text-emerald-600 dark:text-emerald-500 font-mono">{formatBaseCurrency(remaining)}</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Available</p>
+                    <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">{formatBaseCurrency(remaining)}</p>
                 </div>
             </div>
 
-            <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
-                <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Max Lifetime Limit</p>
-                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 font-mono">{formatBaseCurrency(totalLimit)}</p>
+            <div className="pt-5 border-t border-slate-100 dark:border-slate-700">
+                <div className="flex justify-between items-center">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Limit</p>
+                    <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 font-mono">{formatBaseCurrency(totalLimit)}</p>
+                </div>
             </div>
         </div>
     );
 });
 
-export const TaxRoomTracker: React.FC<TaxRoomTrackerProps> = ({ taxRecords, isLoading, onAddTaxRecord, onEditTaxRecord, onDeleteTaxRecord }) => {
+// --- Main View Component ---
+
+export const TaxRoomTracker: React.FC<TaxRoomTrackerProps> = ({ 
+    taxRecords, 
+    isLoading = false, 
+    onAddTaxRecord, 
+    onEditTaxRecord, 
+    onDeleteTaxRecord 
+}) => {
     const [activeTab, setActiveTab] = useState<string>('TFSA');
     const [editingRecord, setEditingRecord] = useState<TaxRecord | null>(null);
     const [isAddingRecord, setIsAddingRecord] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
-    const stats = useMemo<Record<string, AccountStat>>(() => {
-        const currentYear = new Date().getFullYear();
-        const accounts = ['TFSA', 'FHSA', 'RRSP', 'PENSION'];
-        const results: Record<string, AccountStat> = {};
-
-        accounts.forEach((acc: string) => {
-            const records = taxRecords.filter(r => {
-                const rType = r.recordType.toUpperCase();
-                if (acc === 'PENSION') return rType.includes('LAPP') || rType.includes('PENSION');
-                return rType === acc;
-            });
+    // Core Logic: Aggregate records by account
+    const accountStats = useMemo(() => {
+        const stats: Record<string, { used: number, totalLimit: number, remaining: number }> = {};
+        
+        ACCOUNTS.forEach(acc => {
+            const records = taxRecords.filter(r => (r.recordType || '').toUpperCase().includes(acc));
             
-            let totalLimit = 0;
-            let totalUsed = 0;
-            let withdrawalsThisYear = 0;
+            let limit = 0;
+            let contributions = 0;
+            let withdrawals = 0;
 
             records.forEach(r => {
-                const type = (r.transactionType || '').trim().toUpperCase();
-                const desc = (r.description || '').toUpperCase();
-                const val = r.value || 0;
-                const year = new Date(r.date).getFullYear();
+                const type = (r.transactionType || '').toUpperCase().trim();
+                const value = Math.abs(r.value || 0);
 
-                const isLimit = type.includes('LIMIT') || type.includes('INCREASE') || desc.includes('LIMIT') || desc.includes('INCREASE');
-                const isWithdrawal = type.includes('WITHDRAW');
-
-                if (isLimit) {
-                    totalLimit += Math.abs(val);
-                } else {
-                    totalUsed += val;
-                    if (isWithdrawal && year === currentYear) {
-                        withdrawalsThisYear += Math.abs(val);
-                    }
+                if (LIMIT_TYPES.includes(type)) {
+                    limit += value;
+                } else if (CONTRIBUTION_TYPES.includes(type)) {
+                    contributions += value;
+                } else if (WITHDRAWAL_TYPES.includes(type)) {
+                    withdrawals += value;
                 }
             });
 
-            results[acc] = {
-                used: totalUsed,
-                remaining: Math.max(0, totalLimit - totalUsed),
-                totalLimit,
-                withdrawalsThisYear
+            const used = contributions - withdrawals;
+            stats[acc] = {
+                used,
+                totalLimit: limit,
+                remaining: Math.max(0, limit - used)
             };
         });
 
-        return results;
+        return stats;
     }, [taxRecords]);
 
     const activeRecords = useMemo(() => {
-        return taxRecords.filter(r => {
-            const rType = r.recordType.toUpperCase();
-            if (activeTab === 'PENSION') return rType.includes('LAPP') || rType.includes('PENSION');
-            return rType === activeTab;
-        }).sort((a, b) => b.date.localeCompare(a.date));
+        return taxRecords
+            .filter(r => (r.recordType || '').toUpperCase().includes(activeTab))
+            .sort((a, b) => {
+                // If dates match, sort by rowIndex to maintain sheet order
+                if (b.date === a.date) return (b.rowIndex || 0) - (a.rowIndex || 0);
+                return b.date.localeCompare(a.date);
+            });
     }, [taxRecords, activeTab]);
 
-    const getColor = (label: string) => {
-        if (label.includes('TFSA')) return '#10b981'; // Emerald
-        if (label.includes('FHSA')) return '#3b82f6'; // Blue
-        if (label.includes('RRSP')) return '#f59e0b'; // Yellow
-        return '#ef4444'; // Red for Pension/LAPP
+    const getAccountColor = (acc: string) => {
+        if (acc === 'TFSA') return '#10b981';
+        if (acc === 'RRSP') return '#f59e0b';
+        if (acc === 'FHSA') return '#3b82f6';
+        if (acc === 'LAPP') return '#ef4444';
+        if (acc === 'RESP') return '#8b5cf6';
+        return '#64748b';
     };
 
-    const handleDeleteRecord = async (record: TaxRecord) => {
-        if (!onDeleteTaxRecord || !confirm(`Are you sure you want to delete this ${record.transactionType} record?`)) return;
+    const handleDelete = async (record: TaxRecord) => {
+        if (!onDeleteTaxRecord || !confirm(`Delete this ${record.transactionType} entry for ${record.date}?`)) return;
         setDeletingId(record.id);
-        try {
-            await onDeleteTaxRecord(record);
-        } catch (e) {
-            alert(e);
-        } finally {
-            setDeletingId(null);
-        }
+        try { await onDeleteTaxRecord(record); } catch (e: any) { alert(e.message); } finally { setDeletingId(null); }
     };
-
-    if (!taxRecords.length && !isLoading) return null;
 
     return (
-        <div className="space-y-10 animate-fade-in">
-            {/* Top Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {['TFSA', 'FHSA', 'RRSP'].map(acc => (
-                    <AccountRoomCard 
+        <div className="space-y-12 animate-fade-in pb-20">
+            {/* Summary Cards - Only TFSA, RRSP, FHSA */}
+            <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 transition-all duration-500 ${isLoading ? 'opacity-60 blur-[1px]' : ''}`}>
+                {SUMMARY_ACCOUNTS.map(acc => (
+                    <RoomCard 
                         key={acc}
                         label={acc}
-                        used={stats[acc]?.used || 0}
-                        remaining={stats[acc]?.remaining || 0}
-                        totalLimit={stats[acc]?.totalLimit || 0}
-                        color={getColor(acc)}
+                        used={accountStats[acc]?.used || 0}
+                        totalLimit={accountStats[acc]?.totalLimit || 0}
+                        remaining={accountStats[acc]?.remaining || 0}
+                        color={getAccountColor(acc)}
                     />
                 ))}
             </div>
 
-            {/* Tab Navigation + Add Button */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex p-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-2xl w-fit shadow-sm">
-                    {['TFSA', 'FHSA', 'RRSP', 'PENSION'].map(tab => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                activeTab === tab 
-                                ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' 
-                                : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
-                            }`}
-                        >
-                            {tab}
-                        </button>
-                    ))}
-                </div>
-                
-                {onAddTaxRecord && (
-                    <button 
-                        onClick={() => setIsAddingRecord(true)}
-                        className="flex items-center gap-2 bg-slate-900 dark:bg-slate-700 text-white px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 dark:hover:bg-slate-600 transition-all shadow-md active:scale-95"
-                    >
-                        <Plus size={16} /> New Record
-                    </button>
-                )}
-            </div>
-
-            {/* Ledger Detail Table */}
-            <div className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm dark:shadow-xl">
-                <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/20">
-                    <div className="flex items-center gap-3">
-                        <History size={20} className="text-slate-400 dark:text-slate-500" />
-                        <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">
-                            {activeTab} Ledger Detail
-                        </h3>
+            {/* Account Tabs + Ledger Control */}
+            <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+                    <div className="flex bg-slate-100 dark:bg-slate-900/50 p-1.5 rounded-[1.5rem] border border-slate-200 dark:border-slate-800 shadow-inner overflow-x-auto max-w-full no-scrollbar">
+                        {ACCOUNTS.map(acc => (
+                            <button
+                                key={acc}
+                                onClick={() => setActiveTab(acc)}
+                                className={`px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex-shrink-0 ${
+                                    activeTab === acc 
+                                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-lg' 
+                                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                                }`}
+                            >
+                                {acc}
+                            </button>
+                        ))}
                     </div>
-                    <div className="bg-white dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700">
-                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tighter">
-                            {activeRecords.length} Entries Found
+
+                    {!isLoading && onAddTaxRecord && (
+                        <button 
+                            onClick={() => setIsAddingRecord(true)}
+                            className="bg-blue-600 dark:bg-blue-500 text-white font-black uppercase text-[10px] tracking-[0.2em] px-10 py-5 rounded-[1.5rem] shadow-xl shadow-blue-500/30 transition-all hover:-translate-y-1 active:scale-95 flex items-center gap-2"
+                        >
+                            <Plus size={18} strokeWidth={3} /> New Entry
+                        </button>
+                    )}
+                </div>
+
+                {/* Ledger Table */}
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[2.5rem] overflow-hidden shadow-sm">
+                    <div className="px-10 py-6 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                            <History size={20} className="text-slate-400" />
+                            <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em]">{activeTab} Ledger Detail</h4>
+                            <div className="group relative flex items-center">
+                                <span className="flex items-center gap-1 text-[9px] font-black text-amber-600 dark:text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 uppercase tracking-tighter">
+                                    <Lock size={10} /> Private Vault
+                                </span>
+                                <div className="absolute left-0 bottom-full mb-2 w-48 p-2 bg-slate-900 text-white text-[9px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 leading-tight">
+                                    This ledger is stored locally in your browser and backed up via Cloud Vault. It is not synced to Google Sheets.
+                                </div>
+                            </div>
+                        </div>
+                        <span className="text-[9px] font-black text-blue-500 uppercase bg-blue-500/10 px-4 py-1.5 rounded-full border border-blue-500/20 w-fit">
+                            {activeRecords.length} Items Found
                         </span>
                     </div>
-                </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead className="bg-slate-50/50 dark:bg-slate-900/30">
-                            <tr>
-                                <th className="px-8 py-6 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Date</th>
-                                <th className="px-8 py-6 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Type</th>
-                                <th className="px-8 py-6 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest text-right">Value</th>
-                                <th className="px-8 py-6 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Description</th>
-                                <th className="px-8 py-6 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                            {activeRecords.map((record) => {
-                                const type = (record.transactionType || '').toUpperCase();
-                                const desc = (record.description || '').toUpperCase();
-                                const isWithdrawal = type.includes('WITHDRAW');
-                                const isLimit = type.includes('LIMIT') || type.includes('INCREASE') || desc.includes('LIMIT') || desc.includes('INCREASE');
-                                const canEdit = record.rowIndex !== undefined;
-                                const isDeleting = deletingId === record.id;
-                                
-                                return (
-                                    <tr key={record.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
-                                        <td className="px-8 py-5 text-sm font-bold text-slate-500 dark:text-slate-400 font-mono uppercase">{record.date}</td>
-                                        <td className="px-8 py-5">
-                                            <span className={`text-[10px] font-black uppercase tracking-widest ${
-                                                isWithdrawal ? 'text-red-500' : isLimit ? 'text-blue-500 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-500'
-                                            }`}>
-                                                {record.transactionType || 'Entry'}
-                                            </span>
-                                        </td>
-                                        <td className={`px-8 py-5 text-right text-sm font-bold font-mono ${record.value < 0 ? 'text-red-500' : 'text-slate-900 dark:text-white'}`}>
-                                            {formatBaseCurrency(record.value)}
-                                        </td>
-                                        <td className="px-8 py-5 text-sm font-bold text-slate-500 dark:text-slate-400 uppercase truncate max-w-xs">
-                                            {record.description}
-                                        </td>
-                                        <td className="px-8 py-5 text-right">
-                                            <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                {canEdit && onEditTaxRecord && (
-                                                    <button 
-                                                        onClick={() => setEditingRecord(record)} 
-                                                        className="p-1.5 text-slate-400 hover:text-blue-500 transition-colors"
-                                                    >
-                                                        <Pencil size={14} />
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="bg-slate-50/30 dark:bg-slate-900/10 border-b border-slate-100 dark:border-slate-700">
+                                <tr>
+                                    <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th>
+                                    <th className="px-6 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Transaction Type</th>
+                                    <th className="px-6 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Value</th>
+                                    <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Description</th>
+                                    <th className="px-6 py-6 w-24"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                {activeRecords.map(record => {
+                                    const rawType = (record.transactionType || '').toUpperCase();
+                                    const isLimit = LIMIT_TYPES.includes(rawType);
+                                    const isWithdrawal = WITHDRAWAL_TYPES.includes(rawType);
+                                    const isDeleting = deletingId === record.id;
+                                    
+                                    return (
+                                        <tr key={record.id} className="hover:bg-blue-500/[0.03] transition-colors group">
+                                            <td className="px-10 py-6 text-sm font-bold text-slate-500 dark:text-slate-400 font-mono">{record.date}</td>
+                                            <td className="px-6 py-6">
+                                                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${
+                                                    isLimit ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20' :
+                                                    isWithdrawal ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20' :
+                                                    'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                                }`}>
+                                                    {isWithdrawal ? <ArrowDownRight size={12} /> : isLimit ? <Landmark size={12} /> : <ArrowUpRight size={12} />}
+                                                    {record.transactionType}
+                                                </div>
+                                            </td>
+                                            <td className={`px-6 py-6 text-right font-black font-mono text-base ${isWithdrawal ? 'text-red-500' : 'text-slate-900 dark:text-white'}`}>
+                                                {formatBaseCurrency(record.value)}
+                                            </td>
+                                            <td className="px-10 py-6 text-sm font-medium text-slate-600 dark:text-slate-300 truncate max-w-sm" title={record.description}>
+                                                {record.description || <span className="opacity-30 italic">No notes</span>}
+                                            </td>
+                                            <td className="px-6 py-6 text-right">
+                                                <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button onClick={() => setEditingRecord(record)} className="p-2 text-slate-400 hover:text-blue-500 rounded-xl hover:bg-blue-500/10 transition-all" title="Edit entry"><Pencil size={14} /></button>
+                                                    <button onClick={() => handleDelete(record)} disabled={isDeleting} className="p-2 text-slate-400 hover:text-red-500 rounded-xl hover:bg-red-500/10 transition-all" title="Delete entry">
+                                                        {isDeleting ? <Loader2 className="animate-spin" size={14} /> : <Trash2 size={14} />}
                                                     </button>
-                                                )}
-                                                {canEdit && onDeleteTaxRecord && (
-                                                    <button 
-                                                        onClick={() => handleDeleteRecord(record)} 
-                                                        disabled={isDeleting}
-                                                        className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
-                                                    >
-                                                        {isDeleting ? <Loader2 size={14} className="animate-spin text-red-500" /> : <Trash2 size={14} />}
-                                                    </button>
-                                                )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {activeRecords.length === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="p-28 text-center text-slate-400 font-medium opacity-60">
+                                            <div className="flex flex-col items-center gap-6">
+                                                <div className="p-6 bg-slate-50 dark:bg-slate-900 rounded-[2rem] border border-slate-100 dark:border-slate-800">
+                                                    <History size={48} className="opacity-20" />
+                                                </div>
+                                                <p className="text-xs font-black uppercase tracking-[0.3em]">No {activeTab} transactions detected</p>
                                             </div>
                                         </td>
                                     </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                    
-                    {activeRecords.length === 0 && (
-                        <div className="py-24 flex flex-col items-center justify-center text-center px-8">
-                            <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-300 dark:text-slate-600 mb-6 border border-slate-100 dark:border-slate-700">
-                                <Info size={32} />
-                            </div>
-                            <p className="text-slate-400 dark:text-slate-500 text-sm font-bold italic max-w-md">
-                                No {activeTab} records detected. Verify the "Taxable Accounts" sheet has relevant rows.
-                            </p>
-                        </div>
-                    )}
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
             <TaxRecordModal 
                 isOpen={isAddingRecord || !!editingRecord} 
                 initialData={editingRecord}
-                defaultAccount={activeTab === 'PENSION' ? 'PENSION' : activeTab}
+                defaultAccount={activeTab}
                 onClose={() => { setIsAddingRecord(false); setEditingRecord(null); }} 
                 onSave={async r => {
                     if (editingRecord && onEditTaxRecord) {

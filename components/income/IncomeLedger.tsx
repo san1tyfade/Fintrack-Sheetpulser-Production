@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { LedgerData } from '../../types';
-import { Loader2, AlertCircle, Check, Save, ChevronLeft, ChevronRight, Calendar, RefreshCw, Lock, FileX, History } from 'lucide-react';
+import { Loader2, AlertCircle, Check, Save, ChevronLeft, ChevronRight, Calendar, RefreshCw, Lock, FileX, History, LogOut } from 'lucide-react';
 
 interface IncomeLedgerProps {
   expenseData: LedgerData;
@@ -9,6 +9,8 @@ interface IncomeLedgerProps {
   isLoading: boolean;
   isReadOnly?: boolean;
   selectedYear?: number;
+  activeYear?: number;
+  onYearChange?: (year: number) => void;
   onUpdateExpense: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
   onUpdateIncome: (category: string, subCategory: string, monthIndex: number, newValue: number) => Promise<void>;
 }
@@ -214,7 +216,7 @@ const LedgerTable = ({
     );
 }
 
-export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ expenseData, incomeData, isLoading, isReadOnly = false, selectedYear = new Date().getFullYear(), onUpdateExpense, onUpdateIncome }) => {
+export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ expenseData, incomeData, isLoading, isReadOnly = false, selectedYear = new Date().getFullYear(), activeYear, onYearChange, onUpdateExpense, onUpdateIncome }) => {
     const [focusedMonthIndex, setFocusedMonthIndex] = useState<number>(0);
     const [isMobile, setIsMobile] = useState(false);
 
@@ -232,7 +234,7 @@ export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ expenseData, incomeD
     }, [months.length]);
 
     if (!(incomeData?.categories.length > 0 || expenseData?.categories.length > 0)) {
-        return null; // Parent App.tsx handles the discovery state for empty archives in Phase 4
+        return null;
     }
 
     const nextMonth = () => setFocusedMonthIndex(prev => Math.min(prev + 1, months.length - 1));
@@ -259,7 +261,14 @@ export const IncomeLedger: React.FC<IncomeLedgerProps> = ({ expenseData, incomeD
             <div className="mt-auto p-4 bg-slate-50 dark:bg-slate-850/80 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] text-slate-500 font-medium shadow-inner">
                 <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
                     {isReadOnly ? (
-                        <span className="flex items-center gap-1.5 text-amber-500 font-black tracking-widest"><Lock size={14} /> CHRONOS MODE ACTIVE</span>
+                        <button 
+                            onClick={() => activeYear && onYearChange?.(activeYear)}
+                            className="flex items-center gap-1.5 text-amber-500 font-black tracking-widest group hover:text-amber-600 transition-colors"
+                        >
+                            <Lock size={14} className="group-hover:hidden" />
+                            <LogOut size={14} className="hidden group-hover:block rotate-180" />
+                            CHRONOS MODE ACTIVE — <span className="underline decoration-amber-500/30 underline-offset-4">RETURN TO LIVE</span>
+                        </button>
                     ) : (
                         <span className="flex items-center gap-1.5"><Save size={12} className="text-blue-500" /> Auto-saves on Enter / Blur</span>
                     )}

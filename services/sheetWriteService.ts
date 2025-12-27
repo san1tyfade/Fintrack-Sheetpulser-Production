@@ -1,6 +1,6 @@
 
 import { getAccessToken } from './authService';
-import { Trade, Asset, Subscription, BankAccount, TaxRecord } from '../types';
+import { Trade, Asset, Subscription, BankAccount } from '../types';
 
 const BASE_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
 
@@ -11,7 +11,9 @@ const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const setCellValue = (row: any[], headers: string[], keys: string[], val: string | number | boolean) => {
     const h = headers.map(normalize);
+    // Find exact matches first
     let idx = h.findIndex((header, i) => row[i] === null && keys.some(k => header === k));
+    // If no exact match, try partial includes
     if (idx === -1) {
         idx = h.findIndex((header, i) => row[i] === null && keys.some(k => header.includes(k)));
     }
@@ -66,21 +68,17 @@ const mapAccountToRow = (acc: BankAccount, headers: string[]) => {
     return row;
 };
 
-const mapTaxRecordToRow = (record: TaxRecord, headers: string[]) => {
-    const row = new Array(headers.length).fill(null);
-    setCellValue(row, headers, ['account type', 'record type', 'type', 'category'], record.recordType);
-    setCellValue(row, headers, ['account/fund', 'fund', 'account'], record.accountFund);
-    setCellValue(row, headers, ['transcation type', 'transaction type', 'trans type', 'action'], record.transactionType);
-    setCellValue(row, headers, ['date', 'time'], record.date);
-    setCellValue(row, headers, ['value', 'amount'], record.value);
-    setCellValue(row, headers, ['description', 'note', 'details'], record.description);
-    return row;
-};
-
 // --- API Helpers ---
 
+/**
+ * Enhanced Header Fetching
+ * Scans top 10 rows to find the header row, similar to how the parser works.
+ * This ensures that mapping logic finds the correct column indices even if 
+ * the sheet has notes/titles at the top.
+ */
 const fetchHeaders = async (sheetId: string, tabName: string, token: string) => {
-    const range = encodeURIComponent(`${tabName}!A1:Z2`);
+    // Scan deeper (10 rows) to ensure we find headers if they aren't on Row 1
+    const range = encodeURIComponent(`${tabName}!A1:Z10`);
     const headerRes = await fetch(`${BASE_URL}/${sheetId}/values/${range}`, {
         headers: { Authorization: `Bearer ${token}` }
     });
@@ -91,6 +89,7 @@ const fetchHeaders = async (sheetId: string, tabName: string, token: string) => 
     const rows = headerJson.values || [];
     if (rows.length === 0) throw new Error(`Tab '${tabName}' is empty.`);
     
+    // Pick the row with the most non-empty columns as the likely header row
     const bestRow = rows.reduce((best: string[], current: string[]) => 
         (current.filter(v => v).length > best.filter(v => v).length) ? current : best, rows[0]);
 
@@ -110,16 +109,31 @@ const getSheetGridId = async (spreadsheetId: string, tabName: string, token: str
 
 // --- Generic Row Operations ---
 
+/**
+ * FIXED: Uses insertDataOption=INSERT_ROWS and a cleaner range.
+ * This prevents the Google Sheets API from overwriting existing data if it misidentifies 
+ * the end of the table or if filters are active.
+ */
 const appendToSheet = async (sheetId: string, tabName: string, rowValues: any[]) => {
     const token = getAccessToken();
     if (!token) throw new Error("Authentication required.");
-    const range = encodeURIComponent(`${tabName}!A1`);
-    const res = await fetch(`${BASE_URL}/${sheetId}/values/${range}:append?valueInputOption=USER_ENTERED`, {
+    
+    // Use the tab name directly to allow Google to find the table bounds
+    const range = encodeURIComponent(`${tabName}!A:Z`);
+    
+    // insertDataOption=INSERT_ROWS is critical to prevent overwriting existing data
+    const url = `${BASE_URL}/${sheetId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    
+    const res = await fetch(url, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ values: [rowValues] })
     });
-    if (!res.ok) throw new Error("Failed to append row.");
+    
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || "Failed to append row.");
+    }
     return true;
 };
 
@@ -139,17 +153,10 @@ const updateRowInSheet = async (sheetId: string, tabName: string, rowIndex: numb
 
 // --- Phase 2: Yearly Reset Logic (The Cloud Mutation) ---
 
-/**
- * Resets the yearly ledger by performing an atomic-like cloud mutation.
- * This function orchestrates the archiving of current tabs, scrubbing of active data,
- * and incrementing of year-based headers.
- */
 export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string, expenseTab: string) => {
     const token = getAccessToken();
     if (!token) throw new Error("Authentication required.");
 
-    // 1. Identify current year and calculate next year
-    // We read from the Income tab's header row (Row 3)
     const incomeHeaderRange = encodeURIComponent(`${incomeTab}!B3`);
     const headerRes = await fetch(`${BASE_URL}/${spreadsheetId}/values/${incomeHeaderRange}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -158,25 +165,20 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
     const headerData = await headerRes.json();
     const currentHeader = headerData.values?.[0]?.[0] || 'Jan-25';
     
-    // Extract year (e.g., from 'Jan-25' extract '25')
     const yearMatch = currentHeader.match(/-(\d{2,4})$/);
     const currentYearShort = yearMatch ? yearMatch[1] : String(new Date().getFullYear()).slice(-2);
     const currentYearFull = yearMatch ? (yearMatch[1].length === 2 ? 2000 + parseInt(yearMatch[1]) : parseInt(yearMatch[1])) : new Date().getFullYear();
     const nextYearFull = currentYearFull + 1;
     const nextYearShort = String(nextYearFull).slice(-2);
 
-    // 2. Capture current Summary Totals for the Archive (Snapshotting)
-    // On the Income tab, Row 6 usually contains the formula-based totals (B6:M6)
     const totalsRange = encodeURIComponent(`${incomeTab}!B6:M6`);
     const totalsRes = await fetch(`${BASE_URL}/${spreadsheetId}/values/${totalsRange}`, {
         headers: { Authorization: `Bearer ${token}` }
     });
     if (!totalsRes.ok) throw new Error("Phase 2: Failed to capture snapshot of current income totals.");
     const totalsData = await totalsRes.json();
-    // Default to zeroed array if no data found
     const incomeTotalsRow = totalsData.values || [new Array(12).fill(0)];
 
-    // 3. Structural Archive: Duplicate and Rename Sheets
     const incomeGridId = await getSheetGridId(spreadsheetId, incomeTab, token);
     const expenseGridId = await getSheetGridId(spreadsheetId, expenseTab, token);
 
@@ -195,14 +197,11 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
     });
     if (!structuralRes.ok) throw new Error("Phase 2: Structural update failed (Duplicating tabs).");
 
-    // 4. Archive Simplification: Modify the CLONED Income sheet
-    // We move the Snapshot totals to the top row (B4) and wipe detail breakdown on the ARCHIVE.
-    // This makes the archive a clean "sealed" record of the year's totals.
     const emptyDetailsRow = new Array(12).fill("");
     const archiveDataUpdates = [
-        { range: `${archivedIncomeName}!B4:M4`, values: incomeTotalsRow }, // Seal totals at top
-        { range: `${archivedIncomeName}!B5:M6`, values: [emptyDetailsRow, emptyDetailsRow] }, // Scrub archived details
-        { range: `${archivedIncomeName}!A4`, values: [['ANNUAL SNAPSHOT']] } // Relabel
+        { range: `${archivedIncomeName}!B4:M4`, values: incomeTotalsRow }, 
+        { range: `${archivedIncomeName}!B5:M6`, values: [emptyDetailsRow, emptyDetailsRow] }, 
+        { range: `${archivedIncomeName}!A4`, values: [['ANNUAL SNAPSHOT']] } 
     ];
 
     const archiveModRes = await fetch(`${BASE_URL}/${spreadsheetId}/values:batchUpdate`, {
@@ -215,26 +214,21 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
     });
     if (!archiveModRes.ok) throw new Error("Phase 2: Failed to simplify archived snapshot.");
 
-    // 5. Active Sheet Reset (The "Scrub" and "Header Increment")
-    // We clear the active transaction ranges and update the month headers to the new year.
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const nextYearHeaders = monthNames.map(m => `${m}-${nextYearShort}`);
     
-    // Clear ranges (keeping formulas intact by avoiding total rows)
     const emptyRow = new Array(12).fill("");
     const scrubRowsCount = 500; 
     const emptyLargeScrub = new Array(scrubRowsCount).fill(emptyRow);
     const emptySmallScrub = new Array(2).fill(emptyRow); 
 
     const activeSheetUpdates = [
-        // --- Income Tab Reset ---
-        { range: `${incomeTab}!B3:M3`, values: [nextYearHeaders] },      // Increment headers (Row 3)
-        { range: `${incomeTab}!B4:M5`, values: emptySmallScrub },        // Scrub top data section
-        { range: `${incomeTab}!B10:M${10 + scrubRowsCount}`, values: emptyLargeScrub }, // Scrub detailed section
+        { range: `${incomeTab}!B3:M3`, values: [nextYearHeaders] },      
+        { range: `${incomeTab}!B4:M5`, values: emptySmallScrub },        
+        { range: `${incomeTab}!B10:M${10 + scrubRowsCount}`, values: emptyLargeScrub }, 
 
-        // --- Expense Tab Reset ---
-        { range: `${expenseTab}!B6:M6`, values: [nextYearHeaders] },     // Increment headers (Row 6)
-        { range: `${expenseTab}!B7:M${7 + scrubRowsCount}`, values: emptyLargeScrub }    // Scrub all transaction data
+        { range: `${expenseTab}!B6:M6`, values: [nextYearHeaders] },     
+        { range: `${expenseTab}!B7:M${7 + scrubRowsCount}`, values: emptyLargeScrub }    
     ];
 
     const resetRes = await fetch(`${BASE_URL}/${spreadsheetId}/values:batchUpdate`, {
@@ -291,16 +285,6 @@ export const addAccountToSheet = async (sheetId: string, tabName: string, acc: B
 export const updateAccountInSheet = async (sheetId: string, tabName: string, rowIndex: number, acc: BankAccount) => {
     const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
     return updateRowInSheet(sheetId, tabName, rowIndex, mapAccountToRow(acc, headers));
-};
-
-export const addTaxRecordToSheet = async (sheetId: string, tabName: string, record: TaxRecord) => {
-    const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
-    return appendToSheet(sheetId, tabName, mapTaxRecordToRow(record, headers));
-};
-
-export const updateTaxRecordInSheet = async (sheetId: string, tabName: string, rowIndex: number, record: TaxRecord) => {
-    const headers = await fetchHeaders(sheetId, tabName, getAccessToken()!);
-    return updateRowInSheet(sheetId, tabName, rowIndex, mapTaxRecordToRow(record, headers));
 };
 
 export const deleteRowFromSheet = async (sheetId: string, tabName: string, rowIndex: number) => {

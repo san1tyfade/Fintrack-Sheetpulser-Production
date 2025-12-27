@@ -187,8 +187,7 @@ export const getArchiveManagementList = async (): Promise<ArchiveMeta[]> => {
       const archives: ArchiveMeta[] = Array.from(yearMap.entries()).map(([year, records]) => ({
         year,
         records,
-        isLocked: false, // Future: can store lock state in IDB
-        lastUpdated: new Date().toISOString() // Dynamic mapping would be better
+        lastUpdated: new Date().toISOString()
       })).sort((a, b) => b.year - a.year);
 
       resolve(archives);
