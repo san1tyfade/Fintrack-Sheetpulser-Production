@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Navigation } from './components/Navigation';
 import { Dashboard } from './components/Dashboard';
 import { AssetsList } from './components/AssetsList';
@@ -17,9 +17,9 @@ import { parseRawData } from './services/geminiService';
 import { fetchLiveRates } from './services/currencyService';
 import { reconcileInvestments } from './services/portfolioService';
 import { useIndexedDB } from './hooks/useIndexedDB';
-import { initGoogleAuth, signIn, restoreSession, signOut } from './services/authService';
-import { getArchiveManagementList } from './services/backupService';
-import { Lock, History, AlertCircle, RefreshCw, Loader2, Eye, EyeOff } from 'lucide-react';
+import { initGoogleAuth, signIn, restoreSession, signOut, getAccessToken } from './services/authService';
+import { getArchiveManagementList, checkCloudVaultStatus, syncToCloud, restoreFromCloud } from './services/backupService';
+import { Lock, History, AlertCircle, RefreshCw, Loader2, Eye, EyeOff, CloudUpload, CloudDownload, X, CheckCircle2 } from 'lucide-react';
 import { 
   addTradeToSheet, deleteRowFromSheet, updateTradeInSheet, 
   addAssetToSheet, updateAssetInSheet,
@@ -104,6 +104,10 @@ function App() {
   const [availableArchives, setAvailableArchives] = useState<number[]>([]);
   const [remoteArchives, setRemoteArchives] = useState<number[]>([]);
 
+  // Sync on Launch state
+  const [cloudSyncState, setCloudSyncState] = useState<'idle' | 'checking' | 'newer-on-drive' | 'syncing-to-drive' | 'restoring' | 'synced'>('idle');
+  const handshakeAttempted = useRef(false);
+
   useEffect(() => {
     if (isDarkMode) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
@@ -153,6 +157,52 @@ function App() {
     if (authSession) restoreSession(authSession.token, authSession.expires);
     if (window.google) initGoogleAuth(OAUTH_CLIENT_ID);
   }, [configLoaded, sessionLoaded, authSession]);
+
+  /**
+   * Sync on Launch: Performs a background handshake to reconcile local vs cloud vaults.
+   */
+  useEffect(() => {
+    if (handshakeAttempted.current || !sessionLoaded || !authSession) return;
+    
+    const performHandshake = async () => {
+        const token = getAccessToken();
+        if (!token) return;
+
+        handshakeAttempted.current = true;
+        setCloudSyncState('checking');
+        
+        const status = await checkCloudVaultStatus();
+        
+        if (status === 'cloud-newer') {
+            setCloudSyncState('newer-on-drive');
+        } else if (status === 'local-newer') {
+            setCloudSyncState('syncing-to-drive');
+            try {
+                await syncToCloud(userProfile?.email);
+                setCloudSyncState('synced');
+                setTimeout(() => setCloudSyncState('idle'), 3000);
+            } catch (e) {
+                console.error("Auto-sync failed", e);
+                setCloudSyncState('idle');
+            }
+        } else {
+            setCloudSyncState('idle');
+        }
+    };
+
+    performHandshake();
+  }, [sessionLoaded, authSession, userProfile]);
+
+  const handleCloudRestore = async () => {
+      setCloudSyncState('restoring');
+      try {
+          await restoreFromCloud();
+          window.location.reload();
+      } catch (e: any) {
+          alert("Restore failed: " + e.message);
+          setCloudSyncState('newer-on-drive');
+      }
+  };
 
   const syncData = useCallback(async (specificTabs?: (keyof SheetConfig['tabNames'])[], targetYear: number = selectedYear) => {
     if (!sheetConfig.sheetId) return;
@@ -276,7 +326,6 @@ function App() {
   const calculatedInvestments = useMemo(() => reconcileInvestments(investments, trades), [investments, trades]);
 
   const isHistorical = selectedYear !== activeYear;
-  // Limit the chronos aesthetic strictly to the Income & Expense view as requested
   const showChronosAesthetic = isHistorical && currentView === ViewState.INCOME;
   
   return (
@@ -286,6 +335,52 @@ function App() {
         lastUpdated={lastUpdated} isDarkMode={isDarkMode} toggleTheme={toggleTheme} 
       />
       <main className="flex-1 overflow-y-auto h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
+        
+        {/* Sync on Launch Indicator */}
+        {cloudSyncState !== 'idle' && (
+            <div className="sticky top-0 z-50 animate-in slide-in-from-top-4 duration-500 pointer-events-none px-6 md:px-12 pt-4">
+                <div className="max-w-7xl mx-auto">
+                    <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-2xl rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 pointer-events-auto">
+                        <div className="flex items-center gap-4">
+                            <div className={`p-2.5 rounded-xl ${cloudSyncState === 'newer-on-drive' ? 'bg-amber-500/10 text-amber-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                                {cloudSyncState === 'newer-on-drive' ? <CloudDownload size={20} /> : 
+                                 cloudSyncState === 'checking' || cloudSyncState === 'restoring' ? <Loader2 size={20} className="animate-spin" /> :
+                                 cloudSyncState === 'synced' ? <CheckCircle2 size={20} className="text-emerald-500" /> :
+                                 <CloudUpload size={20} className="animate-pulse" />}
+                            </div>
+                            <div className="space-y-0.5">
+                                <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                                    {cloudSyncState === 'checking' ? 'Cloud Handshake...' :
+                                     cloudSyncState === 'newer-on-drive' ? 'Cloud Backup Newer' :
+                                     cloudSyncState === 'syncing-to-drive' ? 'Vault Auto-Sync' :
+                                     cloudSyncState === 'restoring' ? 'Restoring Ledger...' :
+                                     cloudSyncState === 'synced' ? 'Vault Up-to-Date' : ''}
+                                </h4>
+                                <p className="text-[10px] text-slate-500 font-medium">
+                                    {cloudSyncState === 'newer-on-drive' ? 'Drive version is newer than local. Reconcile now?' :
+                                     cloudSyncState === 'syncing-to-drive' ? 'Pushing latest local changes to your Drive vault.' :
+                                     cloudSyncState === 'restoring' ? 'Rehydrating your private ledger from Google Drive.' :
+                                     cloudSyncState === 'synced' ? 'Handshake successful. Consistency verified.' :
+                                     'Verifying private vault consistency.'}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                            {cloudSyncState === 'newer-on-drive' && (
+                                <>
+                                    <button onClick={handleCloudRestore} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-500/20">Restore</button>
+                                    <button onClick={() => setCloudSyncState('idle')} className="p-2 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                                </>
+                            )}
+                            {cloudSyncState === 'synced' && (
+                                <button onClick={() => setCloudSyncState('idle')} className="p-2 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
         <div className={`max-w-7xl mx-auto p-6 md:p-12 mb-20 md:mb-0 relative transition-all duration-700 ${showChronosAesthetic ? 'sepia-[0.15] contrast-[0.95]' : ''}`}>
           
           {/* Discovery State (Loading vs Error vs Ready) */}
