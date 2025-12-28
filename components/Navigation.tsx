@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { ViewState } from '../types';
-import { LayoutDashboard, Wallet, TrendingUp, History, Settings, RefreshCw, Clock, Info, Banknote, Eye, EyeOff } from 'lucide-react';
+import { LayoutDashboard, Wallet, TrendingUp, History, Settings, RefreshCw, Clock, Info, Banknote, BarChart4 } from 'lucide-react';
 
 interface NavigationProps {
   currentView: ViewState;
@@ -22,6 +22,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: ViewState.INVESTMENTS, label: 'Investments', icon: TrendingUp, targetId: 'nav-investments' },
     { id: ViewState.TRADES, label: 'Trades', icon: History, targetId: 'nav-trades' },
     { id: ViewState.INCOME, label: 'Income & Expense', icon: Banknote, targetId: 'nav-income' },
+    { id: ViewState.ANALYTICS, label: 'Analytics', icon: BarChart4, targetId: 'nav-analytics' },
     { id: ViewState.INFORMATION, label: 'Information', icon: Info, targetId: 'nav-information' },
     { id: ViewState.SETTINGS, label: 'Settings', icon: Settings, targetId: 'nav-settings' },
   ];

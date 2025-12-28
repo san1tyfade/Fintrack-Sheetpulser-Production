@@ -121,6 +121,30 @@ export interface LedgerData {
     categories: LedgerCategory[];
 }
 
+/**
+ * TEMPORAL ENGINE TYPES
+ */
+export interface NormalizedTransaction {
+    id: string;
+    date: string;
+    category: string;
+    subCategory: string;
+    amount: number;
+    type: 'INCOME' | 'EXPENSE';
+}
+
+export interface DimensionNode {
+    name: string;
+    total: number;
+    count: number;
+    subDimensions?: Record<string, DimensionNode>;
+}
+
+export interface CustomDateRange {
+    start: string;
+    end: string;
+}
+
 export interface SheetConfig {
   sheetId: string;
   clientId: string;
@@ -149,6 +173,7 @@ export enum ViewState {
   INVESTMENTS = 'INVESTMENTS',
   TRADES = 'TRADES',
   INCOME = 'INCOME',
+  ANALYTICS = 'ANALYTICS',
   INFORMATION = 'INFORMATION',
   SETTINGS = 'SETTINGS',
   PRIVACY = 'PRIVACY',
@@ -160,7 +185,8 @@ export enum TimeFocus {
   QTD = 'QTD',
   YTD = 'YTD',
   ROLLING_12M = 'ROLLING_12M',
-  FULL_YEAR = 'FULL_YEAR'
+  FULL_YEAR = 'FULL_YEAR',
+  CUSTOM = 'CUSTOM'
 }
 
 export type ExchangeRates = Record<string, number>;
@@ -180,9 +206,6 @@ export interface AttributionResult {
   percentageReturn: number;
 }
 
-/** 
- * Phase 3: Storage & Migration Types
- */
 export interface ArchiveMeta {
   year: number;
   records: number;

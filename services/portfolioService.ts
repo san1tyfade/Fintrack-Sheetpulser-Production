@@ -4,10 +4,19 @@ import { normalizeTicker } from './geminiService';
 
 /**
  * Checks if a YYYY-MM-DD string falls within a specific TimeFocus window relative to "now".
+ * Supports custom start/end dates for CUSTOM focus.
  */
-export const isDateWithinFocus = (dateStr: string, focus: TimeFocus): boolean => {
+export const isDateWithinFocus = (
+  dateStr: string, 
+  focus: TimeFocus, 
+  customRange?: { start: string, end: string }
+): boolean => {
   if (!dateStr) return false;
   if (focus === TimeFocus.FULL_YEAR) return true;
+
+  if (focus === TimeFocus.CUSTOM && customRange) {
+    return dateStr >= customRange.start && dateStr <= customRange.end;
+  }
 
   // Normalize inputs: Today at local midnight
   const now = new Date();

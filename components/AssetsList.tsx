@@ -1,10 +1,9 @@
 
 import React, { useMemo, useState, useEffect, memo } from 'react';
 import { Asset, ExchangeRates } from '../types';
-import { Filter, Loader2, Home, Wallet, Trash2, Plus, X, Save, Pencil, Search, LayoutGrid, List, ArrowUpDown, Sparkles, TrendingUp, TrendingDown, Info, PieChart, ExternalLink, Globe } from 'lucide-react';
+import { Filter, Loader2, Home, Wallet, Trash2, Plus, X, Save, Pencil, Search, LayoutGrid, List, Sparkles, TrendingUp, TrendingDown, Info, PieChart } from 'lucide-react';
 import { convertToBase, formatBaseCurrency, formatNativeCurrency, PRIMARY_CURRENCY } from '../services/currencyService';
 import { isInvestmentAsset, isFixedAsset, isCashAsset, getAssetIcon } from '../services/classificationService';
-import { getMarketValuationLookup, MarketLookupResult } from '../services/geminiService';
 import { useIndexedDB } from '../hooks/useIndexedDB';
 
 interface AssetsListProps {
@@ -17,82 +16,6 @@ interface AssetsListProps {
   isReadOnly?: boolean;
   isGhostMode?: boolean;
 }
-
-// --- Sub-Component: Market Lookup Modal ---
-
-const MarketLookupModal = ({ asset, isOpen, onClose }: { asset: Asset | null, isOpen: boolean, onClose: () => void }) => {
-    const [result, setResult] = useState<MarketLookupResult | null>(null);
-    const [loading, setLoading] = useState(false);
-
-    useEffect(() => {
-        if (isOpen && asset && !result) {
-            setLoading(true);
-            getMarketValuationLookup(asset).then(res => {
-                setResult(res);
-                setLoading(false);
-            });
-        }
-    }, [isOpen, asset]);
-
-    if (!isOpen || !asset) return null;
-
-    return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
-            <div className="bg-white dark:bg-slate-800 w-full max-w-xl rounded-3xl shadow-2xl border border-blue-500/20 dark:border-blue-500/10 overflow-hidden">
-                <div className="p-8 space-y-6">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-2xl">
-                            <Globe size={28} className="animate-pulse" />
-                        </div>
-                        <div>
-                            <h3 className="text-xl font-black text-slate-900 dark:text-white">Market Research</h3>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Real-time data for {asset.name}</p>
-                        </div>
-                    </div>
-
-                    <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 min-h-[140px]">
-                        {loading ? (
-                            <div className="flex flex-col items-center justify-center h-full gap-3 py-6">
-                                <Loader2 className="animate-spin text-blue-500" size={32} />
-                                <p className="text-sm font-medium text-slate-500">Browsing real estate & auto portals...</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-4">
-                                <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-sm">
-                                    {result?.text}
-                                </p>
-                                
-                                {result?.sources && result.sources.length > 0 && (
-                                    <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-                                        <p className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest">Market References</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {result.sources.map((source, idx) => (
-                                                <a 
-                                                    key={idx} 
-                                                    href={source.uri} 
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer"
-                                                    className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 hover:border-blue-400 transition-all shadow-sm"
-                                                >
-                                                    <ExternalLink size={12} />
-                                                    {source.title.length > 25 ? source.title.substring(0, 25) + '...' : source.title}
-                                                </a>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="flex gap-3">
-                        <button onClick={() => {setResult(null); onClose();}} className="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white font-bold py-4 rounded-2xl transition-all hover:bg-slate-200 dark:hover:bg-slate-600">Close Research</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
 
 // --- Sub-Component: AddAssetModal ---
 
@@ -244,19 +167,17 @@ const AddAssetModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boole
 
 // --- Sub-Component: AssetCard (Gallery Mode) ---
 
-const AssetCard = memo(({ asset, exchangeRates, isLoading, onDelete, onEdit, onLookup }: { 
+const AssetCard = memo(({ asset, exchangeRates, isLoading, onDelete, onEdit }: { 
     asset: Asset, 
     exchangeRates?: ExchangeRates, 
     isLoading: boolean, 
     onDelete?: (a: Asset) => Promise<void>,
-    onEdit?: (a: Asset) => void,
-    onLookup: (a: Asset) => void
+    onEdit?: (a: Asset) => void
 }) => {
     const isForeign = asset.currency && asset.currency.toUpperCase() !== PRIMARY_CURRENCY;
     const baseValue = convertToBase(asset.value, asset.currency, exchangeRates);
     const [isDeleting, setIsDeleting] = useState(false);
     const canEdit = asset.rowIndex !== undefined;
-    const isSearchable = isFixedAsset(asset);
 
     const handleDelete = async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -269,15 +190,6 @@ const AssetCard = memo(({ asset, exchangeRates, isLoading, onDelete, onEdit, onL
     return (
     <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 hover:border-blue-400/50 transition-all group animate-fade-in relative overflow-hidden flex flex-col justify-between h-full shadow-sm hover:shadow-md">
         <div className="absolute top-3 right-3 flex gap-1 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
-            {isSearchable && (
-                <button 
-                    onClick={() => onLookup(asset)}
-                    className="p-1.5 rounded-lg text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors"
-                    title="Live Market Research"
-                >
-                    <Globe size={16} />
-                </button>
-            )}
             {canEdit && onEdit && (
                 <button 
                     onClick={() => onEdit(asset)}
@@ -346,7 +258,6 @@ export const AssetsList: React.FC<AssetsListProps> = ({
   const [sortKey, setSortKey] = useState<'value' | 'name' | 'type'>('value');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
-  const [researchingAsset, setResearchingAsset] = useState<Asset | null>(null);
 
   const filteredAndSortedAssets = useMemo(() => {
     let result = assets.filter(a => {
@@ -381,7 +292,7 @@ export const AssetsList: React.FC<AssetsListProps> = ({
                   </button>
               )}
           </div>
-          <p className="text-slate-500 dark:text-slate-400 font-medium">Professional asset inventory & analysis.</p>
+          <p className="text-slate-500 dark:text-slate-400 font-medium">Professional asset inventory & evaluation.</p>
         </div>
       </header>
 
@@ -434,12 +345,6 @@ export const AssetsList: React.FC<AssetsListProps> = ({
          onSave={async (a) => editingAsset ? onEditAsset?.(a) : onAddAsset?.(a)}
       />
 
-      <MarketLookupModal 
-        asset={researchingAsset}
-        isOpen={!!researchingAsset}
-        onClose={() => setResearchingAsset(null)}
-      />
-
       <div className="transition-all duration-500">
         {isTableView ? (
             <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-3xl overflow-hidden shadow-sm animate-fade-in">
@@ -478,9 +383,6 @@ export const AssetsList: React.FC<AssetsListProps> = ({
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {isFixedAsset(asset) && (
-                                                <button onClick={() => setResearchingAsset(asset)} className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg"><Globe size={14} /></button>
-                                            )}
                                             {canEdit && (
                                                 <>
                                                     <button onClick={() => setEditingAsset(asset)} className="p-1.5 text-slate-400 hover:text-blue-500"><Pencil size={14} /></button>
@@ -505,7 +407,6 @@ export const AssetsList: React.FC<AssetsListProps> = ({
                         exchangeRates={exchangeRates} 
                         onDelete={onDeleteAsset}
                         onEdit={setEditingAsset}
-                        onLookup={setResearchingAsset}
                     />
                 ))}
             </div>

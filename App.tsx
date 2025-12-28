@@ -1,25 +1,27 @@
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Navigation } from './components/Navigation';
 import { Dashboard } from './components/Dashboard';
 import { AssetsList } from './components/AssetsList';
 import { InvestmentsList } from './components/InvestmentsList';
 import { TradesList } from './components/TradesList';
 import { IncomeView } from './components/IncomeView';
+import { AnalyticsView } from './components/AnalyticsView';
 import { InformationView } from './components/InformationView';
 import { DataIngest } from './components/DataIngest';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { TermsOfService } from './components/TermsOfService';
 import { GuidedTour } from './components/GuidedTour';
-import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile, TourStep, TaxRecord, ArchiveMeta, TimeFocus } from './types';
+import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile, TourStep, TaxRecord, ArchiveMeta, TimeFocus, NormalizedTransaction } from './types';
 import { fetchSheetData, fetchTabNames } from './services/sheetService';
 import { parseRawData } from './services/geminiService';
 import { fetchLiveRates } from './services/currencyService';
 import { reconcileInvestments } from './services/portfolioService';
+import { buildUnifiedTimeline } from './services/temporalService';
 import { useIndexedDB } from './hooks/useIndexedDB';
-import { initGoogleAuth, signIn, restoreSession, signOut, getAccessToken } from './services/authService';
-import { getArchiveManagementList, checkCloudVaultStatus, syncToCloud, restoreFromCloud } from './services/backupService';
-import { Lock, History, AlertCircle, RefreshCw, Loader2, Eye, EyeOff, CloudUpload, CloudDownload, X, CheckCircle2 } from 'lucide-react';
+import { initGoogleAuth, signIn, restoreSession, signOut } from './services/authService';
+import { getArchiveManagementList } from './services/backupService';
+import { Lock, History, AlertCircle, RefreshCw, Loader2, Eye, EyeOff } from 'lucide-react';
 import { 
   addTradeToSheet, deleteRowFromSheet, updateTradeInSheet, 
   addAssetToSheet, updateAssetInSheet,
@@ -52,6 +54,7 @@ const TOUR_STEPS: TourStep[] = [
     { targetId: 'nav-investments', title: 'Investment Tracker', content: 'See your stock and crypto performance with live-updating market prices and account allocations.', view: ViewState.INVESTMENTS },
     { targetId: 'nav-trades', title: 'Trade History', content: 'Log your buys and sells. We\'ll automatically update your holdings based on this history.', view: ViewState.TRADES },
     { targetId: 'nav-income', title: 'Cash Flow Ledger', content: 'Manage your monthly budget and view a "Sankey" flow of where your money actually goes.', view: ViewState.INCOME },
+    { targetId: 'nav-analytics', title: 'Alpha Analytics', content: 'Institutional-grade analysis including XIRR, Sharpe Ratio, and market benchmarking.', view: ViewState.ANALYTICS },
     { targetId: 'nav-information', title: 'Recurring Burn', content: 'Track subscriptions, debt balances, and account details in one place.', view: ViewState.INFORMATION },
     { targetId: 'nav-settings', title: 'Control Center', content: 'Connect different sheets, wipe local data, or adjust your tab mappings.', view: ViewState.SETTINGS },
 ];
@@ -86,6 +89,9 @@ function App() {
   const [taxRecords, setTaxRecords] = useIndexedDB<TaxRecord[]>('fintrack_tax_records', []);
   const [netWorthHistory, setNetWorthHistory] = useIndexedDB<NetWorthEntry[]>('fintrack_history', []);
   
+  // Temporal Cache
+  const [unifiedTimeline, setUnifiedTimeline] = useState<NormalizedTransaction[]>([]);
+
   // Contextual Data (Year Dependent)
   const [incomeData, setIncomeData] = useIndexedDB<IncomeEntry[]>(`fintrack_income_${selectedYear}`, []);
   const [expenseData, setExpenseData] = useIndexedDB<ExpenseEntry[]>(`fintrack_expenses_${selectedYear}`, []);
@@ -103,10 +109,6 @@ function App() {
   
   const [availableArchives, setAvailableArchives] = useState<number[]>([]);
   const [remoteArchives, setRemoteArchives] = useState<number[]>([]);
-
-  // Sync on Launch state
-  const [cloudSyncState, setCloudSyncState] = useState<'idle' | 'checking' | 'newer-on-drive' | 'syncing-to-drive' | 'restoring' | 'synced'>('idle');
-  const handshakeAttempted = useRef(false);
 
   useEffect(() => {
     if (isDarkMode) document.documentElement.classList.add('dark');
@@ -141,6 +143,11 @@ function App() {
       }
   }, [sheetConfig.sheetId]);
 
+  // Recalculate Timeline when local data changes
+  useEffect(() => {
+      buildUnifiedTimeline().then(setUnifiedTimeline);
+  }, [incomeData, expenseData, detailedExpenses, detailedIncome, isSyncing]);
+
   useEffect(() => {
     const initData = async () => {
       setExchangeRates(await fetchLiveRates());
@@ -158,57 +165,10 @@ function App() {
     if (window.google) initGoogleAuth(OAUTH_CLIENT_ID);
   }, [configLoaded, sessionLoaded, authSession]);
 
-  /**
-   * Sync on Launch: Performs a background handshake to reconcile local vs cloud vaults.
-   */
-  useEffect(() => {
-    if (handshakeAttempted.current || !sessionLoaded || !authSession) return;
-    
-    const performHandshake = async () => {
-        const token = getAccessToken();
-        if (!token) return;
-
-        handshakeAttempted.current = true;
-        setCloudSyncState('checking');
-        
-        const status = await checkCloudVaultStatus();
-        
-        if (status === 'cloud-newer') {
-            setCloudSyncState('newer-on-drive');
-        } else if (status === 'local-newer') {
-            setCloudSyncState('syncing-to-drive');
-            try {
-                await syncToCloud(userProfile?.email);
-                setCloudSyncState('synced');
-                setTimeout(() => setCloudSyncState('idle'), 3000);
-            } catch (e) {
-                console.error("Auto-sync failed", e);
-                setCloudSyncState('idle');
-            }
-        } else {
-            setCloudSyncState('idle');
-        }
-    };
-
-    performHandshake();
-  }, [sessionLoaded, authSession, userProfile]);
-
-  const handleCloudRestore = async () => {
-      setCloudSyncState('restoring');
-      try {
-          await restoreFromCloud();
-          window.location.reload();
-      } catch (e: any) {
-          alert("Restore failed: " + e.message);
-          setCloudSyncState('newer-on-drive');
-      }
-  };
-
   const syncData = useCallback(async (specificTabs?: (keyof SheetConfig['tabNames'])[], targetYear: number = selectedYear) => {
     if (!sheetConfig.sheetId) return;
     setIsSyncing(true);
     setSyncStatus(null);
-    
     try {
         const session = await signIn();
         setAuthSession(session);
@@ -217,25 +177,19 @@ function App() {
         setIsSyncing(false);
         return;
     }
-
     const allKeys = Object.keys(sheetConfig.tabNames) as (keyof SheetConfig['tabNames'])[];
     const targets = specificTabs && specificTabs.length > 0 ? specificTabs : allKeys;
     setSyncingTabs(prev => { const next = new Set(prev); targets.forEach(t => next.add(t)); return next; });
-    
     const getTabName = (baseKey: keyof SheetConfig['tabNames']) => {
         const baseName = sheetConfig.tabNames[baseKey];
         if (targetYear === activeYear) return baseName;
-        if (['income', 'expenses'].includes(baseKey)) {
-            return `${baseName}-${String(targetYear).slice(-2)}`;
-        }
+        if (['income', 'expenses'].includes(baseKey)) return `${baseName}-${String(targetYear).slice(-2)}`;
         return baseName;
     };
-
     const fetchSafe = async <T,>(tabName: string, type: any): Promise<T> => {
         const rawData = await fetchSheetData(sheetConfig.sheetId, tabName); 
         return await parseRawData<T>(rawData, type); 
     };
-
     try {
         let missingArchives = false;
         await Promise.all(targets.map(async key => {
@@ -258,9 +212,8 @@ function App() {
                     case 'expenses': setDetailedExpenses(await fetchSafe(actualTabName, 'detailedExpenses')); break;
                 }
             } catch (e: any) {
-                if (e.message.includes('NOT_FOUND')) {
-                    if (targetYear !== activeYear) missingArchives = true;
-                } else throw e;
+                if (e.message.includes('NOT_FOUND')) { if (targetYear !== activeYear) missingArchives = true; } 
+                else throw e;
             } finally { setSyncingTabs(prev => { const next = new Set(prev); next.delete(key); return next; }); }
         }));
         setLastUpdatedStr(new Date().toISOString());
@@ -290,22 +243,10 @@ function App() {
     setter(prev => prev.map(i => i.id === item.id ? item : i));
   }, [sheetConfig, selectedYear, activeYear]);
 
-  // --- Local-First Tax Record Handlers ---
-
-  const handleAddTaxRecord = useCallback(async (record: TaxRecord) => {
-      setTaxRecords(prev => [...prev, record]);
-  }, [setTaxRecords]);
-
-  const handleEditTaxRecord = useCallback(async (record: TaxRecord) => {
-      setTaxRecords(prev => prev.map(r => r.id === record.id ? record : r));
-  }, [setTaxRecords]);
-
-  const handleDeleteTaxRecord = useCallback(async (record: TaxRecord) => {
-      setTaxRecords(prev => prev.filter(r => r.id !== record.id));
-  }, [setTaxRecords]);
-
+  const handleAddTaxRecord = useCallback(async (record: TaxRecord) => { setTaxRecords(prev => [...prev, record]); }, [setTaxRecords]);
+  const handleEditTaxRecord = useCallback(async (record: TaxRecord) => { setTaxRecords(prev => prev.map(r => r.id === record.id ? record : r)); }, [setTaxRecords]);
+  const handleDeleteTaxRecord = useCallback(async (record: TaxRecord) => { setTaxRecords(prev => prev.filter(r => r.id !== record.id)); }, [setTaxRecords]);
   const handleSignOut = useCallback(() => { signOut(); setUserProfile(null); setAuthSession(null); setCurrentView(ViewState.DASHBOARD); }, [setUserProfile, setAuthSession]);
-
   const handleRolloverSuccess = useCallback((nextYear: number) => {
       setActiveYear(nextYear);
       setSelectedYear(nextYear);
@@ -324,7 +265,6 @@ function App() {
 
   const lastUpdated = useMemo(() => lastUpdatedStr ? new Date(lastUpdatedStr) : null, [lastUpdatedStr]);
   const calculatedInvestments = useMemo(() => reconcileInvestments(investments, trades), [investments, trades]);
-
   const isHistorical = selectedYear !== activeYear;
   const showChronosAesthetic = isHistorical && currentView === ViewState.INCOME;
   
@@ -335,55 +275,8 @@ function App() {
         lastUpdated={lastUpdated} isDarkMode={isDarkMode} toggleTheme={toggleTheme} 
       />
       <main className="flex-1 overflow-y-auto h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
-        
-        {/* Sync on Launch Indicator */}
-        {cloudSyncState !== 'idle' && (
-            <div className="sticky top-0 z-50 animate-in slide-in-from-top-4 duration-500 pointer-events-none px-6 md:px-12 pt-4">
-                <div className="max-w-7xl mx-auto">
-                    <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-2xl rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 pointer-events-auto">
-                        <div className="flex items-center gap-4">
-                            <div className={`p-2.5 rounded-xl ${cloudSyncState === 'newer-on-drive' ? 'bg-amber-500/10 text-amber-500' : 'bg-blue-500/10 text-blue-500'}`}>
-                                {cloudSyncState === 'newer-on-drive' ? <CloudDownload size={20} /> : 
-                                 cloudSyncState === 'checking' || cloudSyncState === 'restoring' ? <Loader2 size={20} className="animate-spin" /> :
-                                 cloudSyncState === 'synced' ? <CheckCircle2 size={20} className="text-emerald-500" /> :
-                                 <CloudUpload size={20} className="animate-pulse" />}
-                            </div>
-                            <div className="space-y-0.5">
-                                <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                                    {cloudSyncState === 'checking' ? 'Cloud Handshake...' :
-                                     cloudSyncState === 'newer-on-drive' ? 'Cloud Backup Newer' :
-                                     cloudSyncState === 'syncing-to-drive' ? 'Vault Auto-Sync' :
-                                     cloudSyncState === 'restoring' ? 'Restoring Ledger...' :
-                                     cloudSyncState === 'synced' ? 'Vault Up-to-Date' : ''}
-                                </h4>
-                                <p className="text-[10px] text-slate-500 font-medium">
-                                    {cloudSyncState === 'newer-on-drive' ? 'Drive version is newer than local. Reconcile now?' :
-                                     cloudSyncState === 'syncing-to-drive' ? 'Pushing latest local changes to your Drive vault.' :
-                                     cloudSyncState === 'restoring' ? 'Rehydrating your private ledger from Google Drive.' :
-                                     cloudSyncState === 'synced' ? 'Handshake successful. Consistency verified.' :
-                                     'Verifying private vault consistency.'}
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex gap-2 shrink-0">
-                            {cloudSyncState === 'newer-on-drive' && (
-                                <>
-                                    <button onClick={handleCloudRestore} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-500/20">Restore</button>
-                                    <button onClick={() => setCloudSyncState('idle')} className="p-2 text-slate-400 hover:text-slate-600"><X size={20} /></button>
-                                </>
-                            )}
-                            {cloudSyncState === 'synced' && (
-                                <button onClick={() => setCloudSyncState('idle')} className="p-2 text-slate-400 hover:text-slate-600"><X size={20} /></button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        )}
-
         <div className={`max-w-7xl mx-auto p-6 md:p-12 mb-20 md:mb-0 relative transition-all duration-700 ${showChronosAesthetic ? 'sepia-[0.15] contrast-[0.95]' : ''}`}>
           
-          {/* Discovery State (Loading vs Error vs Ready) */}
           {isHistorical && (currentView === ViewState.DASHBOARD || currentView === ViewState.INCOME) && incomeData.length === 0 && (
                <div className="bg-white dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl p-16 flex flex-col items-center justify-center text-center space-y-6 animate-fade-in">
                    {isSyncing ? (
@@ -398,51 +291,28 @@ function App() {
                             </div>
                             <div className="space-y-2">
                                 <h3 className="text-xl font-black text-slate-900 dark:text-white">Vault Discovery Failed</h3>
-                                <p className="text-sm text-slate-500 max-w-sm">We couldn't find local records for {selectedYear}. Try scanning your spreadsheet for an archived tab like "Income-{String(selectedYear).slice(-2)}".</p>
+                                <p className="text-sm text-slate-500 max-w-sm">We couldn't find local records for {selectedYear}.</p>
                             </div>
-                            <button 
-                                onClick={() => syncData(['income', 'expenses'])}
-                                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-black px-8 py-4 rounded-2xl shadow-xl shadow-blue-500/20 transition-all hover:-translate-y-0.5 active:scale-95 uppercase text-xs tracking-widest"
-                            >
+                            <button onClick={() => syncData(['income', 'expenses'])} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-black px-8 py-4 rounded-2xl shadow-xl shadow-blue-500/20 transition-all uppercase text-xs tracking-widest">
                                 <RefreshCw size={16} /> Retry Discovery
                             </button>
                         </>
                    ) : (
                         <div className="flex flex-col items-center gap-4">
                             <History size={48} className="text-slate-400" />
-                            <button 
-                                onClick={() => syncData(['income', 'expenses'])}
-                                className="bg-blue-600 hover:bg-blue-500 text-white font-black px-8 py-4 rounded-2xl shadow-xl"
-                            >
-                                Start Discovery
-                            </button>
+                            <button onClick={() => syncData(['income', 'expenses'])} className="bg-blue-600 hover:bg-blue-500 text-white font-black px-8 py-4 rounded-2xl shadow-xl">Start Discovery</button>
                         </div>
                    )}
                </div>
           )}
 
           <div className={`${isHistorical && (currentView === ViewState.DASHBOARD || currentView === ViewState.INCOME) && incomeData.length === 0 ? 'hidden' : ''}`}>
-              {currentView === ViewState.DASHBOARD && (
-                  <Dashboard 
-                    assets={assets} 
-                    trades={trades}
-                    netWorthHistory={netWorthHistory} 
-                    incomeData={incomeData} 
-                    expenseData={expenseData} 
-                    isLoading={isSyncing} 
-                    exchangeRates={exchangeRates} 
-                    isDarkMode={isDarkMode} 
-                    selectedYear={selectedYear} 
-                    timeFocus={timeFocus}
-                    onTimeFocusChange={setTimeFocus}
-                    availableYears={timeMachineYears}
-                    onYearChange={setSelectedYear}
-                  />
-              )}
+              {currentView === ViewState.DASHBOARD && <Dashboard assets={assets} trades={trades} netWorthHistory={netWorthHistory} incomeData={incomeData} expenseData={expenseData} isLoading={isSyncing} exchangeRates={exchangeRates} isDarkMode={isDarkMode} selectedYear={selectedYear} timeFocus={timeFocus} onTimeFocusChange={setTimeFocus} availableYears={timeMachineYears} onYearChange={setSelectedYear} />}
               {currentView === ViewState.ASSETS && <AssetsList assets={assets} isLoading={isSyncing} exchangeRates={exchangeRates} onAddAsset={a => addAssetToSheet(sheetConfig.sheetId, sheetConfig.tabNames.assets, a).then(() => syncData(['assets']))} onEditAsset={a => handleEditGeneric(a, sheetConfig.tabNames.assets, updateAssetInSheet, setAssets)} onDeleteAsset={a => handleDeleteGeneric(a, sheetConfig.tabNames.assets, setAssets)} isReadOnly={false} isGhostMode={isGhostMode} />}
               {currentView === ViewState.INVESTMENTS && <InvestmentsList investments={calculatedInvestments} assets={assets} trades={trades} isLoading={isSyncing} exchangeRates={exchangeRates} />}
               {currentView === ViewState.TRADES && <TradesList trades={trades} isLoading={isSyncing} onAddTrade={t => addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, t).then(() => syncData(['trades']))} onEditTrade={t => handleEditGeneric(t, sheetConfig.tabNames.trades, updateTradeInSheet, setTrades)} onDeleteTrade={t => handleDeleteGeneric(t, sheetConfig.tabNames.trades, setTrades)} isReadOnly={false} />}
               {currentView === ViewState.INCOME && <IncomeView incomeData={incomeData} expenseData={expenseData} detailedExpenses={detailedExpenses} detailedIncome={detailedIncome} isLoading={isSyncing} isDarkMode={isDarkMode} isReadOnly={isHistorical} selectedYear={selectedYear} onUpdateExpense={async (cat, sub, m, v) => { await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.expenses, cat, sub, m, v); syncData(['expenses']); }} onUpdateIncome={async (cat, sub, m, v) => { await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.income, cat, sub, m, v); syncData(['income']); }} availableYears={timeMachineYears} onYearChange={setSelectedYear} activeYear={activeYear} />}
+              {currentView === ViewState.ANALYTICS && <AnalyticsView assets={assets} trades={trades} investments={investments} netWorthHistory={netWorthHistory} timeline={unifiedTimeline} isLoading={isSyncing} />}
               {currentView === ViewState.INFORMATION && <InformationView subscriptions={subscriptions} accounts={accounts} debtEntries={debtEntries} taxRecords={taxRecords} isLoading={isSyncing} onAddSubscription={s => addSubscriptionToSheet(sheetConfig.sheetId, sheetConfig.tabNames.subscriptions, s).then(() => syncData(['subscriptions']))} onEditSubscription={s => handleEditGeneric(s, sheetConfig.tabNames.subscriptions, updateSubscriptionInSheet, setSubscriptions)} onDeleteSubscription={s => handleDeleteGeneric(s, sheetConfig.tabNames.subscriptions, setSubscriptions)} onAddAccount={a => addAccountToSheet(sheetConfig.sheetId, sheetConfig.tabNames.accounts, a).then(() => syncData(['accounts']))} onEditAccount={a => handleEditGeneric(a, sheetConfig.tabNames.accounts, updateAccountInSheet, setAccounts)} onDeleteAccount={a => handleDeleteGeneric(a, sheetConfig.tabNames.accounts, setAccounts)} onAddTaxRecord={handleAddTaxRecord} onEditTaxRecord={handleEditTaxRecord} onDeleteTaxRecord={handleDeleteTaxRecord} isReadOnly={false} />}
               {currentView === ViewState.SETTINGS && <DataIngest config={sheetConfig} onConfigChange={setSheetConfig} onSync={syncData} isSyncing={isSyncing} syncingTabs={syncingTabs} syncStatus={syncStatus} sheetUrl={sheetUrl} onSheetUrlChange={setSheetUrl} isDarkMode={isDarkMode} toggleTheme={toggleTheme} userProfile={userProfile} onProfileChange={setUserProfile} onSessionChange={setAuthSession} onSignOut={handleSignOut} onViewChange={setCurrentView} onTourStart={() => setIsTourActive(true)} activeYear={activeYear} onRolloverSuccess={handleRolloverSuccess} />}
               {currentView === ViewState.PRIVACY && <PrivacyPolicy onBack={() => setCurrentView(ViewState.SETTINGS)} />}
@@ -451,43 +321,19 @@ function App() {
         </div>
       </main>
 
-      {/* Floating Privacy Toggle */}
       <div className="fixed bottom-24 md:bottom-8 right-6 z-50 animate-in slide-in-from-bottom-4 duration-500">
-        <button 
-          onClick={toggleGhostMode}
-          className={`p-4 rounded-full shadow-2xl transition-all duration-300 group flex items-center gap-2 overflow-hidden ${
-            isGhostMode 
-            ? 'bg-amber-500 text-white ring-4 ring-amber-500/20' 
-            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500/50'
-          }`}
-          title={isGhostMode ? 'Privacy Mode Active' : 'Privacy Mode Off'}
-        >
+        <button onClick={toggleGhostMode} className={`p-4 rounded-full shadow-2xl transition-all duration-300 group flex items-center gap-2 overflow-hidden ${isGhostMode ? 'bg-amber-500 text-white ring-4 ring-amber-500/20' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500/50'}`} title={isGhostMode ? 'Privacy Mode Active' : 'Privacy Mode Off'}>
           {isGhostMode ? <EyeOff size={24} /> : <Eye size={24} />}
-          <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-500 whitespace-nowrap text-sm font-black uppercase tracking-widest px-0 group-hover:px-2">
-            {isGhostMode ? 'Privacy On' : 'Privacy Off'}
-          </span>
+          <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-500 whitespace-nowrap text-sm font-black uppercase tracking-widest px-0 group-hover:px-2">{isGhostMode ? 'Privacy On' : 'Privacy Off'}</span>
         </button>
       </div>
 
       <style>{`
-        .ghost-mode-active .ghost-blur {
-          filter: blur(10px);
-          transition: filter 0.3s ease;
-          user-select: none;
-          pointer-events: none;
-        }
-        .chronos-historical {
-          --primary-accent: 245, 158, 11; /* Amber 500 */
-        }
-        .chronos-historical button.bg-blue-600 {
-            background-color: rgb(var(--primary-accent)) !important;
-        }
-        .chronos-historical .text-blue-600, .chronos-historical .text-blue-500 {
-            color: rgb(var(--primary-accent)) !important;
-        }
-        .chronos-historical .border-blue-500 {
-            border-color: rgb(var(--primary-accent)) !important;
-        }
+        .ghost-mode-active .ghost-blur { filter: blur(10px); transition: filter 0.3s ease; user-select: none; pointer-events: none; }
+        .chronos-historical { --primary-accent: 245, 158, 11; }
+        .chronos-historical button.bg-blue-600 { background-color: rgb(var(--primary-accent)) !important; }
+        .chronos-historical .text-blue-600, .chronos-historical .text-blue-500 { color: rgb(var(--primary-accent)) !important; }
+        .chronos-historical .border-blue-500 { border-color: rgb(var(--primary-accent)) !important; }
       `}</style>
       {isTourActive && <GuidedTour steps={TOUR_STEPS} onComplete={() => { setIsTourActive(false); setHasCompletedTour(true); }} onStepChange={(view) => setCurrentView(view)} />}
     </div>

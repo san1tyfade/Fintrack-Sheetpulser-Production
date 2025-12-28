@@ -1,7 +1,8 @@
 
 import React, { useMemo, memo, useState, useEffect } from 'react';
 import { TaxRecord } from '../types';
-import { ShieldCheck, Landmark, Sparkles, History, Plus, Pencil, Trash2, X, Save, Loader2, ArrowUpRight, ArrowDownRight, Coins, GraduationCap, Lock } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { ShieldCheck, Landmark, Sparkles, History, Info, Plus, Pencil, Trash2, X, Save, Loader2, ArrowUpRight, ArrowDownRight, Coins, GraduationCap, Lock } from 'lucide-react';
 import { formatBaseCurrency } from '../services/currencyService';
 
 interface TaxRoomTrackerProps {
@@ -12,61 +13,14 @@ interface TaxRoomTrackerProps {
   onDeleteTaxRecord?: (rec: TaxRecord) => Promise<void>;
 }
 
+// Support for more account types found in typical tax-advantaged portfolios
 const ACCOUNTS = ['TFSA', 'RRSP', 'FHSA', 'LAPP', 'RESP'];
-const SUMMARY_ACCOUNTS = ['TFSA', 'RRSP', 'FHSA']; 
+const SUMMARY_ACCOUNTS = ['TFSA', 'RRSP', 'FHSA']; // Only show room tracking cards for these
 
+// Mapping logic for transaction labels commonly used in spreadsheets
 const LIMIT_TYPES = ['LIMIT', 'LIMIT INCREASE', 'OPENING BALANCE', 'INCREASE'];
 const CONTRIBUTION_TYPES = ['CONTRIBUTION', 'DEPOSIT'];
 const WITHDRAWAL_TYPES = ['WITHDRAWAL', 'WITHDRAW'];
-
-// --- Sub-Component: CircularProgress (Refined for smoothness) ---
-
-const CircularProgress = ({ percentage, color, size = 64 }: { percentage: number, color: string, size?: number }) => {
-    const radius = 36;
-    const circumference = 2 * Math.PI * radius;
-    const strokeDashoffset = circumference - (Math.min(percentage, 100) / 100) * circumference;
-
-    return (
-        <div className="relative flex items-center justify-center shrink-0" style={{ width: size, height: size }}>
-            <svg 
-                className="transform -rotate-90 w-full h-full drop-shadow-sm" 
-                viewBox="0 0 100 100"
-            >
-                {/* Background Track - Always smooth, using currentColor for theme integration */}
-                <circle
-                    className="text-slate-100 dark:text-slate-700/40"
-                    strokeWidth="10"
-                    stroke="currentColor"
-                    fill="transparent"
-                    r={radius}
-                    cx="50"
-                    cy="50"
-                />
-                {/* Progress Bar - Rounded caps and clean path data for anti-aliasing */}
-                <circle
-                    stroke={color}
-                    strokeWidth="10"
-                    strokeDasharray={circumference}
-                    style={{ 
-                        strokeDashoffset, 
-                        transition: 'stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
-                        strokeLinecap: 'round'
-                    }}
-                    strokeOpacity="1"
-                    fill="transparent"
-                    r={radius}
-                    cx="50"
-                    cy="50"
-                />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <span className="text-[10px] font-black text-slate-900 dark:text-white tracking-tighter">
-                    {Math.round(percentage)}%
-                </span>
-            </div>
-        </div>
-    );
-};
 
 // --- Sub-Component: TaxRecordModal ---
 
@@ -214,6 +168,10 @@ const RoomCard = memo(({
 }: { 
     label: string, used: number, remaining: number, totalLimit: number, color: string 
 }) => {
+    const data = [
+        { name: 'Used', value: Math.max(0, used) },
+        { name: 'Remaining', value: Math.max(0, remaining) }
+    ];
     const pctUsed = totalLimit > 0 ? (used / totalLimit) * 100 : 0;
     
     const getIcon = () => {
@@ -238,8 +196,28 @@ const RoomCard = memo(({
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5">Contribution Room</p>
                     </div>
                 </div>
-                {/* Refined Custom Indicator: Hardware accelerated, smooth curves, no aliasing */}
-                <CircularProgress percentage={pctUsed} color={color} size={64} />
+                <div className="relative w-14 h-14">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                            <Pie
+                                data={data}
+                                innerRadius={20}
+                                outerRadius={26}
+                                paddingAngle={0}
+                                dataKey="value"
+                                startAngle={90}
+                                endAngle={450}
+                                stroke="none"
+                            >
+                                <Cell fill={color} />
+                                <Cell fill="currentColor" className="text-slate-100 dark:text-slate-900" />
+                            </Pie>
+                        </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <span className="text-[9px] font-black text-slate-900 dark:text-white">{Math.round(pctUsed)}%</span>
+                    </div>
+                </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-6">
@@ -277,6 +255,7 @@ export const TaxRoomTracker: React.FC<TaxRoomTrackerProps> = ({
     const [isAddingRecord, setIsAddingRecord] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
+    // Core Logic: Aggregate records by account
     const accountStats = useMemo(() => {
         const stats: Record<string, { used: number, totalLimit: number, remaining: number }> = {};
         
@@ -315,6 +294,7 @@ export const TaxRoomTracker: React.FC<TaxRoomTrackerProps> = ({
         return taxRecords
             .filter(r => (r.recordType || '').toUpperCase().includes(activeTab))
             .sort((a, b) => {
+                // If dates match, sort by rowIndex to maintain sheet order
                 if (b.date === a.date) return (b.rowIndex || 0) - (a.rowIndex || 0);
                 return b.date.localeCompare(a.date);
             });
@@ -337,6 +317,7 @@ export const TaxRoomTracker: React.FC<TaxRoomTrackerProps> = ({
 
     return (
         <div className="space-y-12 animate-fade-in pb-20">
+            {/* Summary Cards - Only TFSA, RRSP, FHSA */}
             <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 transition-all duration-500 ${isLoading ? 'opacity-60 blur-[1px]' : ''}`}>
                 {SUMMARY_ACCOUNTS.map(acc => (
                     <RoomCard 
@@ -350,6 +331,7 @@ export const TaxRoomTracker: React.FC<TaxRoomTrackerProps> = ({
                 ))}
             </div>
 
+            {/* Account Tabs + Ledger Control */}
             <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
                     <div className="flex bg-slate-100 dark:bg-slate-900/50 p-1.5 rounded-[1.5rem] border border-slate-200 dark:border-slate-800 shadow-inner overflow-x-auto max-w-full no-scrollbar">
@@ -378,6 +360,7 @@ export const TaxRoomTracker: React.FC<TaxRoomTrackerProps> = ({
                     )}
                 </div>
 
+                {/* Ledger Table */}
                 <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[2.5rem] overflow-hidden shadow-sm">
                     <div className="px-10 py-6 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div className="flex items-center gap-3">

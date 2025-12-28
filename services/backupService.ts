@@ -36,17 +36,6 @@ const dbDelete = async (key: string): Promise<void> => {
   });
 };
 
-const dbGet = async (key: string): Promise<any> => {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.get(key);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-};
-
 /**
  * Internal helper to gather all fintrack_ data into a vault object.
  * Refactored to fix race conditions using Promise.all
@@ -169,36 +158,6 @@ export const restoreFromCloud = async () => {
   const timestamp = new Date().toISOString();
   await dbSet('fintrack_last_cloud_sync_at', timestamp);
   return timestamp;
-};
-
-/**
- * Cloud Handshake Logic for "Sync on Launch"
- * Returns: 
- * 'up-to-date': Cloud and local are in sync.
- * 'cloud-newer': Drive has a newer file (User should restore).
- * 'local-newer': Local has newer data (App should silent sync).
- * 'no-vault': No vault found on Drive.
- */
-export const checkCloudVaultStatus = async (): Promise<'up-to-date' | 'cloud-newer' | 'local-newer' | 'no-vault'> => {
-  try {
-    const existingFile = await findVaultFile();
-    if (!existingFile) return 'no-vault';
-
-    const lastLocalSync = await dbGet('fintrack_last_cloud_sync_at');
-    if (!lastLocalSync) return 'cloud-newer'; // File on drive but no local record
-
-    const driveTime = new Date(existingFile.modifiedTime || 0).getTime();
-    const localTime = new Date(lastLocalSync).getTime();
-
-    // Allow 5 second buffer for network latency/clock drift
-    if (driveTime > localTime + 5000) return 'cloud-newer';
-    if (localTime > driveTime + 5000) return 'local-newer';
-    
-    return 'up-to-date';
-  } catch (e) {
-    console.error("Cloud status check failed", e);
-    return 'no-vault';
-  }
 };
 
 /**

@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, memo } from 'react';
-import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry, TimeFocus, Trade } from '../types';
+import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry, TimeFocus, Trade, CustomDateRange } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, BarChart, Bar, ReferenceLine, Line } from 'recharts';
 import { ArrowUpRight, DollarSign, Wallet, X, Loader2, TrendingUp, TrendingDown, Scale, PieChart as PieIcon, Lock, Calendar, PiggyBank, BarChart3, Info, ArrowRight, Minus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { convertToBase, formatBaseCurrency, formatNativeCurrency, PRIMARY_CURRENCY } from '../services/currencyService';
@@ -221,6 +221,8 @@ const NetWorthChart = memo(({
     isHistorical, 
     timeFocus, 
     onFocusChange,
+    customRange,
+    onCustomRangeChange,
     incomeData = [],
     expenseData = [],
     startValue = 0,
@@ -233,6 +235,8 @@ const NetWorthChart = memo(({
     isHistorical: boolean, 
     timeFocus: TimeFocus, 
     onFocusChange?: (focus: TimeFocus) => void,
+    customRange?: CustomDateRange,
+    onCustomRangeChange?: (range: CustomDateRange) => void,
     incomeData: IncomeEntry[],
     expenseData: ExpenseEntry[],
     startValue: number,
@@ -245,17 +249,13 @@ const NetWorthChart = memo(({
     const tooltipBorder = isDarkMode ? '#334155' : '#cbd5e1';
 
     const isFullHistory = timeFocus === TimeFocus.FULL_YEAR;
-    // Show principal line only if we are focused on a specific year and it's not MTD/QTD
     const showPrincipal = !isFullHistory && timeFocus !== TimeFocus.MTD && timeFocus !== TimeFocus.QTD;
 
     const filteredData = useMemo(() => {
-        // If ALL/Full Year is selected, use all available data from historical records
         const baseData = isFullHistory ? [...data].sort((a,b) => a.date.localeCompare(b.date)) : data.filter(d => d.date.startsWith(String(selectedYear)));
-        
-        // Apply focus window only if not viewing full history or historical archives
         const windowData = (isHistorical || isFullHistory) 
             ? baseData 
-            : baseData.filter(d => isDateWithinFocus(d.date, timeFocus));
+            : baseData.filter(d => isDateWithinFocus(d.date, timeFocus, customRange));
         
         const sortedIncome = [...incomeData].sort((a,b) => a.date.localeCompare(b.date));
         const sortedExpense = [...expenseData].sort((a,b) => a.date.localeCompare(b.date));
@@ -272,7 +272,7 @@ const NetWorthChart = memo(({
                 gain: Math.max(0, entry.value - principal)
             };
         });
-    }, [data, selectedYear, isHistorical, timeFocus, incomeData, expenseData, startValue, isFullHistory]);
+    }, [data, selectedYear, isHistorical, timeFocus, customRange, incomeData, expenseData, startValue, isFullHistory]);
 
     const handleNextYear = () => {
         if (!onYearChange || !availableYears.length) return;
@@ -306,7 +306,12 @@ const NetWorthChart = memo(({
                     </p>
                 </div>
                 {!isHistorical && onFocusChange && (
-                    <TimeFocusSelector current={timeFocus} onChange={onFocusChange} />
+                    <TimeFocusSelector 
+                        current={timeFocus} 
+                        onChange={onFocusChange} 
+                        customRange={customRange}
+                        onCustomRangeChange={onCustomRangeChange}
+                    />
                 )}
                 {isHistorical && !isFullHistory && (
                     <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 rounded-lg text-[10px] font-black uppercase text-amber-600 dark:text-amber-400 border border-amber-500/20">
@@ -328,7 +333,6 @@ const NetWorthChart = memo(({
                                 tickFormatter={(str) => { 
                                     const d = parseISOToLocal(str); 
                                     if (isNaN(d.getTime())) return str;
-                                    // If viewing all time, include the year in the label for context
                                     return isFullHistory 
                                         ? d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
                                         : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); 
@@ -359,138 +363,175 @@ const NetWorthChart = memo(({
                 ) : (
                     <div className="h-full flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-xl bg-slate-50 dark:bg-slate-800/20">
                         <TrendingUp className="opacity-20 mb-3" size={48} />
-                        <p className="font-medium text-center px-4">Insufficient data for {selectedYear}.</p>
+                        <p className="font-medium text-center px-4">Insufficient data for current window.</p>
                     </div>
                 )}
             </div>
         </div>
     );
 });
+
+// --- Fix: Implemented missing sub-components for Dashboard ---
 
 const IncomeChart = memo(({ data, isDarkMode, isHistorical }: { data: any[], isDarkMode: boolean, isHistorical: boolean }) => {
     const axisColor = isDarkMode ? '#94a3b8' : '#64748b';
     const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
     const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
     const tooltipBorder = isDarkMode ? '#334155' : '#cbd5e1';
-    const tooltipText = isDarkMode ? '#f1f5f9' : '#0f172a';
 
     return (
-        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 h-[380px] flex flex-col shadow-sm transition-colors relative overflow-hidden">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                <Scale size={20} className={isHistorical ? 'text-amber-500' : 'text-blue-500 dark:text-blue-400'} />
-                Net Income Trend {isHistorical && <span className="text-[10px] bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded text-amber-600">ARCHIVE</span>}
-            </h3>
-            <div className="flex-1 w-full min-h-0">
+        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[400px] shadow-sm transition-colors relative overflow-hidden group">
+            <div className="flex items-center justify-between mb-8 relative z-10">
+                <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-500">
+                        <BarChart3 size={20} />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Cash Flow</h3>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">Monthly Inflow vs Outflow</p>
+                    </div>
+                </div>
+            </div>
+            <div className="flex-1 w-full min-h-0 relative z-10">
                 {data.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <BarChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-                            <XAxis dataKey="monthStr" stroke={axisColor} tick={{fontSize: 11}} axisLine={false} tickLine={false} />
-                            <YAxis stroke={axisColor} tick={{fontSize: 11}} tickFormatter={(val) => `$${val/1000}k`} axisLine={false} tickLine={false} />
-                            <Tooltip 
-                                contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.5rem'}} 
-                                itemStyle={{ color: tooltipText, fontWeight: 600 }} 
-                                labelStyle={{ color: axisColor, marginBottom: '4px', fontSize: '12px' }} 
-                                formatter={(val: number) => [<span className="ghost-blur">{formatBaseCurrency(val)}</span>, 'Net Income']} 
-                                cursor={{fill: gridColor, opacity: 0.3}} 
+                            <XAxis 
+                                dataKey="monthStr" 
+                                stroke={axisColor} 
+                                tick={{fontSize: 10, fill: axisColor, fontWeight: 700}} 
+                                axisLine={false} 
+                                tickLine={false} 
                             />
-                            <ReferenceLine y={0} stroke="#64748b" />
-                            <Bar dataKey="net" maxBarSize={40} radius={[4, 4, 0, 0]} animationDuration={1000}>
-                                {data.map((e, i) => <Cell key={i} fill={e.net >= 0 ? (isHistorical ? '#f59e0b' : '#10b981') : '#ef4444'} />)}
-                            </Bar>
+                            <YAxis 
+                                stroke={axisColor} 
+                                tick={{fontSize: 10, fill: axisColor}} 
+                                axisLine={false} 
+                                tickLine={false} 
+                                tickFormatter={(val) => `$${val/1000}k`} 
+                                width={40}
+                            />
+                            <Tooltip 
+                                cursor={{ fill: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }}
+                                contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '1rem', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                                labelStyle={{ color: axisColor, marginBottom: '8px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' }} 
+                                formatter={(value: number) => [<span className="ghost-blur font-mono font-bold">{formatBaseCurrency(value)}</span>, ""]}
+                            />
+                            <Bar dataKey="income" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
+                            <Bar dataKey="expense" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={20} />
                         </BarChart>
                     </ResponsiveContainer>
                 ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-xl bg-slate-50 dark:bg-slate-800/20">
-                        <Scale className="opacity-20 mb-3" size={48} />
-                        <p className="font-medium">No income data available.</p>
-                    </div>
+                    <div className="h-full flex items-center justify-center text-slate-400 italic text-sm">No flow data for this period.</div>
                 )}
             </div>
         </div>
     );
 });
 
-const AllocationChart = memo(({ data, selectedCategory, onSelect, isDarkMode }: { data: any[], selectedCategory: string | null, onSelect: (name: string | null) => void, isDarkMode: boolean }) => {
+const AllocationChart = memo(({ data, selectedCategory, onSelect, isDarkMode }: { data: any[], selectedCategory: string | null, onSelect: (cat: string | null) => void, isDarkMode: boolean }) => {
     const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
     const tooltipBorder = isDarkMode ? '#334155' : '#cbd5e1';
-    const tooltipText = isDarkMode ? '#f1f5f9' : '#0f172a';
-    const labelColor = isDarkMode ? '#94a3b8' : '#64748b';
 
     return (
-        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[380px] shadow-sm transition-colors">
-            <div className="flex justify-between items-start mb-6">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                    <PieIcon size={20} className="text-purple-500 dark:text-purple-400" /> Asset Allocation
-                </h3>
-                {selectedCategory && (
-                    <button onClick={(e) => { e.stopPropagation(); onSelect(null); }} className="text-[10px] flex items-center gap-1 px-2 py-1 bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded-lg border border-purple-500/30 hover:bg-purple-500/30 transition-colors">
-                        {selectedCategory} <X size={10} />
-                    </button>
-                )}
+        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[400px] shadow-sm transition-colors relative overflow-hidden group">
+            <div className="flex items-center justify-between mb-8 relative z-10">
+                <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-500">
+                        <PieIcon size={20} />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Asset Mix</h3>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">Portfolio Allocation</p>
+                    </div>
+                </div>
             </div>
-            <div className="flex-1 w-full min-h-0 relative">
+            <div className="flex-1 w-full min-h-0 relative z-10">
                 {data.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                            <Pie data={data} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={4} dataKey="value" onClick={(entry) => onSelect(entry.name === selectedCategory ? null : entry.name)} className="cursor-pointer focus:outline-none">
-                                {data.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke={entry.name === selectedCategory ? (isDarkMode ? '#fff' : '#000') : 'none'} strokeWidth={2} opacity={selectedCategory && selectedCategory !== entry.name ? 0.3 : 1} />)}
+                            <Pie
+                                data={data}
+                                innerRadius={70}
+                                outerRadius={90}
+                                paddingAngle={5}
+                                dataKey="value"
+                                onMouseEnter={(_, index) => onSelect(data[index].name)}
+                                onClick={(e, index) => {
+                                    e.stopPropagation?.();
+                                    onSelect(data[index].name === selectedCategory ? null : data[index].name);
+                                }}
+                                className="outline-none"
+                            >
+                                {data.map((_, index) => (
+                                    <Cell 
+                                        key={`cell-${index}`} 
+                                        fill={COLORS[index % COLORS.length]} 
+                                        stroke="none"
+                                        style={{ 
+                                            filter: selectedCategory === data[index].name ? 'drop-shadow(0 0 8px rgba(59, 130, 246, 0.5))' : 'none',
+                                            opacity: !selectedCategory || selectedCategory === data[index].name ? 1 : 0.4,
+                                            cursor: 'pointer'
+                                        }}
+                                    />
+                                ))}
                             </Pie>
                             <Tooltip 
-                                backgroundColor={tooltipBg}
-                                contentStyle={{ backgroundColor: tooltipBg, borderColor: tooltipBorder, borderRadius: '0.5rem' }} 
-                                itemStyle={{ color: tooltipText, fontWeight: 600 }} 
-                                labelStyle={{ color: labelColor }} 
-                                formatter={(value: number) => { 
-                                    const total = data.reduce((acc, c) => acc + c.value, 0); 
-                                    return [<span className="ghost-blur">{formatBaseCurrency(value)} ({((value/total)*100).toFixed(1)}%)</span>]; 
-                                }} 
+                                contentStyle={{ backgroundColor: tooltipBg, border: 'none', borderRadius: '1rem', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                                formatter={(value: number, name: string) => [<span className="ghost-blur font-mono font-bold">{formatBaseCurrency(value)}</span>, name]}
                             />
                         </PieChart>
                     </ResponsiveContainer>
                 ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-700/50 rounded-xl bg-slate-50 dark:bg-slate-800/10">
-                        <PieIcon className="opacity-20 mb-3" size={48} />
-                        <p className="font-medium">No asset data found.</p>
-                    </div>
+                    <div className="h-full flex items-center justify-center text-slate-400 italic text-sm">No allocation data.</div>
                 )}
-                {data.length > 0 && !selectedCategory && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="text-center"><p className="text-xs text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">Total</p><p className="text-sm font-bold text-slate-900 dark:text-white ghost-blur">{formatBaseCurrency(data.reduce((acc, c) => acc + c.value, 0))}</p></div>
-                    </div>
-                )}
+            </div>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none mt-12">
+                <div className="text-center">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white ghost-blur">
+                        {formatBaseCurrency(data.reduce((acc, curr) => acc + curr.value, 0))}
+                    </p>
+                </div>
             </div>
         </div>
     );
 });
 
-const DrilldownView = memo(({ category, assets, exchangeRates }: { category: string, assets: Asset[], exchangeRates?: ExchangeRates }) => (
-    <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 animate-fade-in mt-6 shadow-sm transition-colors">
-        <div className="flex justify-between items-center mb-4 border-b border-slate-200 dark:border-slate-700/50 pb-2">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2"><span className="w-2 h-6 bg-purple-500 rounded-full"></span>{category} Breakdown</h3>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {assets.map(asset => {
-                const baseValue = convertToBase(asset.value, asset.currency, exchangeRates);
-                const isForeign = asset.currency && asset.currency.toUpperCase() !== PRIMARY_CURRENCY;
-                return (
-                    <div key={asset.id} className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700/50 hover:border-slate-300 dark:hover:border-slate-600 transition-all hover:shadow-md group">
-                        <div className="flex justify-between items-start">
-                            <div className="min-w-0 pr-3">
-                                <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate" title={asset.name}>{asset.name}</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-[10px] bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-medium border border-slate-100 dark:border-slate-700">{asset.currency || PRIMARY_CURRENCY}</span>
-                                    {isForeign && <span className="text-[10px] text-slate-500 dark:text-slate-600 ghost-blur">{formatNativeCurrency(asset.value, asset.currency)}</span>}
-                                </div>
-                            </div>
-                            <div className="text-right"><p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap ghost-blur">{formatBaseCurrency(baseValue)}</p></div>
+const DrilldownView = memo(({ category, assets, exchangeRates }: { category: string, assets: Asset[], exchangeRates?: ExchangeRates }) => {
+    return (
+        <div className="bg-white dark:bg-slate-800/50 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm animate-fade-in-up">
+            <div className="flex items-center justify-between mb-8">
+                <div>
+                    <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-3">
+                        <ArrowRight size={24} className="text-blue-500" />
+                        {category} Detail
+                    </h3>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">Individual Asset Listing</p>
+                </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {assets.map(asset => {
+                    const baseVal = convertToBase(asset.value, asset.currency, exchangeRates);
+                    return (
+                        <div key={asset.id} className="p-6 bg-slate-50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-blue-500/20 transition-all group">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">{asset.name}</p>
+                            <p className="text-2xl font-black text-slate-900 dark:text-white ghost-blur leading-none">
+                                {formatNativeCurrency(asset.value, asset.currency)}
+                            </p>
+                            {asset.currency !== PRIMARY_CURRENCY && (
+                                <p className="text-xs text-emerald-600 font-bold ghost-blur mt-2">
+                                    ≈ {formatBaseCurrency(baseVal)}
+                                </p>
+                            )}
                         </div>
-                    </div>
-                );
-            })}
+                    );
+                })}
+            </div>
         </div>
-    </div>
-));
+    );
+});
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
     assets, 
@@ -508,6 +549,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
     onYearChange
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [customRange, setCustomRange] = useState<CustomDateRange>({
+      start: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0],
+      end: new Date().toISOString().split('T')[0]
+  });
+  
   const isHistorical = selectedYear !== new Date().getFullYear();
 
   const { netWorth, totalInvestments, totalCash, allocationData } = useMemo(() => {
@@ -570,7 +616,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
-                <NetWorthChart data={chartData} isDarkMode={isDarkMode} selectedYear={selectedYear} isHistorical={isHistorical} timeFocus={timeFocus} onFocusChange={onTimeFocusChange} incomeData={incomeData} expenseData={expenseData} startValue={attributionData.startValue} availableYears={availableYears} onYearChange={onYearChange} />
+                <NetWorthChart 
+                    data={chartData} 
+                    isDarkMode={isDarkMode} 
+                    selectedYear={selectedYear} 
+                    isHistorical={isHistorical} 
+                    timeFocus={timeFocus} 
+                    onFocusChange={onTimeFocusChange} 
+                    customRange={customRange}
+                    onCustomRangeChange={setCustomRange}
+                    incomeData={incomeData} 
+                    expenseData={expenseData} 
+                    startValue={attributionData.startValue} 
+                    availableYears={availableYears} 
+                    onYearChange={onYearChange} 
+                />
             </div>
             <div className="lg:col-span-1">
                 <WealthDriversCard attribution={attributionData} isLoading={isLoading} timeFocus={timeFocus} />
