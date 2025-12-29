@@ -36,7 +36,10 @@ const CompactTabInput = memo(({ label, value, onChange, onSync, sheetId, isSynci
   const [status, setStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
 
   useEffect(() => {
-    if (!sheetId || !value) return setStatus('idle');
+    if (!sheetId || !value) {
+      setStatus('idle');
+      return;
+    }
     const timer = setTimeout(async () => {
       setStatus('checking');
       const isValid = await validateSheetTab(sheetId, value);
@@ -62,8 +65,6 @@ const CompactTabInput = memo(({ label, value, onChange, onSync, sheetId, isSynci
     </div>
   );
 });
-
-// --- Phase 1 & 3: Rollover Stepper Component ---
 
 const RolloverStepper = ({ 
     isOpen, 
@@ -110,7 +111,6 @@ const RolloverStepper = ({
         try {
             await resetYearlyLedger(sheetId, incomeTab, expenseTab);
             setStep('done');
-            // Notify parent that we are now in the next financial year
             onSuccess(nextYear);
         } catch (e: any) {
             alert(`Rollover failed: ${e.message}`);
@@ -122,8 +122,6 @@ const RolloverStepper = ({
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fade-in">
             <div className="bg-white dark:bg-slate-800 w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                 <div className="p-8 space-y-6">
-                    
-                    {/* Header */}
                     <div className="flex items-center gap-4">
                         <div className={`p-3 rounded-2xl ${step === 'done' ? 'bg-emerald-500 text-white' : 'bg-blue-600 text-white'}`}>
                             {step === 'done' ? <PartyPopper size={24} /> : <Zap size={24} />}
@@ -134,7 +132,6 @@ const RolloverStepper = ({
                         </div>
                     </div>
 
-                    {/* Progress indicator */}
                     <div className="flex gap-2">
                         {['syncing', 'confirm', 'rolling', 'done'].map((s, idx) => {
                             const isActive = step === s;
@@ -234,7 +231,6 @@ const RolloverStepper = ({
 export const DataIngest: React.FC<DataIngestProps> = (props) => {
   const { config, onConfigChange, onSync, isSyncing, syncingTabs, syncStatus, sheetUrl, onSheetUrlChange, isDarkMode, toggleTheme, userProfile, onProfileChange, onSessionChange, onSignOut, onViewChange, onTourStart, activeYear, onRolloverSuccess } = props;
   const [isAuthLoading, setIsAuthLoading] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
   const [onboardingStatus, setOnboardingStatus] = useState<'idle' | 'cloning' | 'syncing' | 'complete' | 'error' | 'manual'>('idle');
   
   const [isBackingUp, setIsBackingUp] = useState(false);
@@ -409,7 +405,7 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
         <div className="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-6 flex flex-col justify-between min-h-[220px]">
             <div className="flex justify-between items-start">
                 <div className="flex items-center gap-4">
-                    <img src={userProfile?.picture} alt="" className="w-12 h-12 rounded-full border-2 border-slate-100 dark:border-slate-700 shadow-sm" />
+                    <img src={userProfile?.picture || ''} alt="" className="w-12 h-12 rounded-full border-2 border-slate-100 dark:border-slate-700 shadow-sm" />
                     <div><h4 className="font-bold text-slate-900 dark:text-white">{userProfile?.name}</h4><p className="text-xs text-slate-500">{userProfile?.email}</p></div>
                 </div>
                 <button onClick={onSignOut} className="text-slate-400 hover:text-red-500 transition-colors"><LogOut size={18} /></button>
@@ -431,7 +427,6 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
         </div>
       </div>
 
-      {/* Tab Mappings */}
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-6">
         <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-4">
           <div className="flex items-center gap-3">
@@ -446,7 +441,7 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
           {[
             { t: 'Portfolio', i: Layers, k: ['assets', 'investments', 'trades'] },
             { t: 'Flow', i: DollarSign, k: ['income', 'expenses', 'subscriptions', 'debt'] },
-            { t: 'Logs & Records', i: History, k: ['accounts', 'logData'] }
+            { t: 'Logs & Records', i: History, k: ['accounts', 'logData', 'portfolioLog'] }
           ].map(cat => (
             <div key={cat.t} className="space-y-3">
               <div className="flex items-center gap-2 px-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><cat.i size={12} /> {cat.t}</div>
@@ -465,7 +460,6 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
         )}
       </div>
 
-      {/* Storage & Archive Management */}
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm space-y-6">
           <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-4">
               <div className="flex items-center gap-3">
@@ -529,7 +523,6 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
           </div>
       </div>
 
-      {/* Phase 1 & 3: Year-End Maintenance */}
       <div className="bg-white dark:bg-slate-800 border-2 border-blue-500/20 dark:border-blue-500/10 rounded-3xl p-8 shadow-xl relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none group-hover:bg-blue-500/10 transition-all"></div>
           <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
@@ -565,7 +558,6 @@ export const DataIngest: React.FC<DataIngestProps> = (props) => {
           />
       </div>
 
-      {/* Cloud & Local Portability */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/30 rounded-2xl p-6 shadow-sm">
             <div className="flex items-center gap-3 mb-6">

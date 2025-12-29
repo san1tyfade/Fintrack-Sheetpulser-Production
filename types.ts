@@ -84,6 +84,16 @@ export interface NetWorthEntry {
   currency?: string;
 }
 
+export interface PortfolioLogEntry {
+  date: string;
+  accounts: Record<string, number>;
+}
+
+export interface ProcessedPortfolioEntry extends PortfolioLogEntry {
+  totalValue: number;
+  percentChange: number;
+}
+
 export interface IncomeEntry {
   date: string;
   monthStr: string;
@@ -155,6 +165,7 @@ export interface SheetConfig {
     subscriptions: string;
     accounts: string;
     logData: string;
+    portfolioLog: string;
     debt: string;
     income: string;
     expenses: string;
@@ -188,6 +199,8 @@ export enum TimeFocus {
   FULL_YEAR = 'FULL_YEAR',
   CUSTOM = 'CUSTOM'
 }
+
+export type AnalyticsSubView = 'FLOW' | 'PORTFOLIO';
 
 export type ExchangeRates = Record<string, number>;
 

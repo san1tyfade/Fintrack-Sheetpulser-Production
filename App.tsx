@@ -12,7 +12,7 @@ import { DataIngest } from './components/DataIngest';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { TermsOfService } from './components/TermsOfService';
 import { GuidedTour } from './components/GuidedTour';
-import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile, TourStep, TaxRecord, ArchiveMeta, TimeFocus, NormalizedTransaction } from './types';
+import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, PortfolioLogEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile, TourStep, TaxRecord, ArchiveMeta, TimeFocus, NormalizedTransaction } from './types';
 import { fetchSheetData, fetchTabNames } from './services/sheetService';
 import { parseRawData } from './services/geminiService';
 import { fetchLiveRates } from './services/currencyService';
@@ -42,9 +42,10 @@ const DEFAULT_CONFIG: SheetConfig = {
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
     logData: 'logdata',
+    portfolioLog: 'portfolio_log',
     debt: 'debt',
     income: 'Income',
-    expenses: 'Expense'
+    expenses: 'Income'
   }
 };
 
@@ -88,6 +89,7 @@ function App() {
   const [debtEntries, setDebtEntries] = useIndexedDB<DebtEntry[]>('fintrack_debt', []);
   const [taxRecords, setTaxRecords] = useIndexedDB<TaxRecord[]>('fintrack_tax_records', []);
   const [netWorthHistory, setNetWorthHistory] = useIndexedDB<NetWorthEntry[]>('fintrack_history', []);
+  const [portfolioHistory, setPortfolioHistory] = useIndexedDB<PortfolioLogEntry[]>('fintrack_portfolio_history', []);
   
   // Temporal Cache
   const [unifiedTimeline, setUnifiedTimeline] = useState<NormalizedTransaction[]>([]);
@@ -202,14 +204,25 @@ function App() {
                     case 'subscriptions': setSubscriptions(await fetchSafe(actualTabName, 'subscriptions')); break;
                     case 'accounts': setAccounts(await fetchSafe(actualTabName, 'accounts')); break;
                     case 'logData': setNetWorthHistory(await fetchSafe(actualTabName, 'logData')); break;
+                    case 'portfolioLog': setPortfolioHistory(await fetchSafe(actualTabName, 'portfolioLog')); break;
                     case 'debt': setDebtEntries(await fetchSafe(actualTabName, 'debt')); break;
                     case 'income': 
                         const finData = await fetchSafe<IncomeAndExpenses>(actualTabName, 'income'); 
                         setIncomeData(finData.income); 
                         setExpenseData(finData.expenses);
                         setDetailedIncome(await fetchSafe<LedgerData>(actualTabName, 'detailedIncome'));
+                        
+                        // If expenses and income are on the same tab, we can also populate detailedExpenses here
+                        if (sheetConfig.tabNames.expenses === sheetConfig.tabNames.income) {
+                             setDetailedExpenses(await fetchSafe(actualTabName, 'detailedExpenses'));
+                        }
                         break;
-                    case 'expenses': setDetailedExpenses(await fetchSafe(actualTabName, 'detailedExpenses')); break;
+                    case 'expenses': 
+                        // Only fetch separately if it's a different tab than income
+                        if (sheetConfig.tabNames.expenses !== sheetConfig.tabNames.income) {
+                            setDetailedExpenses(await fetchSafe(actualTabName, 'detailedExpenses')); 
+                        }
+                        break;
                 }
             } catch (e: any) {
                 if (e.message.includes('NOT_FOUND')) { if (targetYear !== activeYear) missingArchives = true; } 
@@ -223,7 +236,7 @@ function App() {
         if (!specificTabs) scanForRemoteArchives();
     } catch (e: any) { setSyncStatus({ type: 'error', msg: e.message || "Sync failed." }); }
     finally { setIsSyncing(false); }
-  }, [sheetConfig, selectedYear, activeYear, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setDebtEntries, setIncomeData, setExpenseData, setDetailedExpenses, setDetailedIncome, setLastUpdatedStr, setAuthSession, scanForRemoteArchives]);
+  }, [sheetConfig, selectedYear, activeYear, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setPortfolioHistory, setDebtEntries, setIncomeData, setExpenseData, setDetailedExpenses, setDetailedIncome, setLastUpdatedStr, setAuthSession, scanForRemoteArchives]);
 
   useEffect(() => {
     if (sheetConfig.sheetId && incomeData.length === 0 && !isSyncing && !discoveryAttempted[selectedYear]) {
@@ -286,7 +299,7 @@ function App() {
                         </div>
                    ) : discoveryAttempted[selectedYear] ? (
                         <>
-                            <div className="w-20 h-20 bg-slate-50 dark:bg-slate-900 rounded-full flex items-center justify-center text-slate-300 dark:text-slate-600 border border-slate-100 dark:border-slate-800">
+                            <div className="w-20 h-20 bg-slate-50 dark:bg-slate-900 rounded-full flex items-center justify-center text-slate-300 dark:text-600 border border-slate-100 dark:border-slate-800">
                                 <AlertCircle size={40} />
                             </div>
                             <div className="space-y-2">
@@ -312,7 +325,7 @@ function App() {
               {currentView === ViewState.INVESTMENTS && <InvestmentsList investments={calculatedInvestments} assets={assets} trades={trades} isLoading={isSyncing} exchangeRates={exchangeRates} />}
               {currentView === ViewState.TRADES && <TradesList trades={trades} isLoading={isSyncing} onAddTrade={t => addTradeToSheet(sheetConfig.sheetId, sheetConfig.tabNames.trades, t).then(() => syncData(['trades']))} onEditTrade={t => handleEditGeneric(t, sheetConfig.tabNames.trades, updateTradeInSheet, setTrades)} onDeleteTrade={t => handleDeleteGeneric(t, sheetConfig.tabNames.trades, setTrades)} isReadOnly={false} />}
               {currentView === ViewState.INCOME && <IncomeView incomeData={incomeData} expenseData={expenseData} detailedExpenses={detailedExpenses} detailedIncome={detailedIncome} isLoading={isSyncing} isDarkMode={isDarkMode} isReadOnly={isHistorical} selectedYear={selectedYear} onUpdateExpense={async (cat, sub, m, v) => { await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.expenses, cat, sub, m, v); syncData(['expenses']); }} onUpdateIncome={async (cat, sub, m, v) => { await updateLedgerValue(sheetConfig.sheetId, sheetConfig.tabNames.income, cat, sub, m, v); syncData(['income']); }} availableYears={timeMachineYears} onYearChange={setSelectedYear} activeYear={activeYear} />}
-              {currentView === ViewState.ANALYTICS && <AnalyticsView assets={assets} trades={trades} investments={investments} netWorthHistory={netWorthHistory} timeline={unifiedTimeline} isLoading={isSyncing} />}
+              {currentView === ViewState.ANALYTICS && <AnalyticsView assets={assets} trades={trades} investments={investments} netWorthHistory={netWorthHistory} portfolioHistory={portfolioHistory} timeline={unifiedTimeline} incomeData={incomeData} expenseData={expenseData} isLoading={isSyncing} />}
               {currentView === ViewState.INFORMATION && <InformationView subscriptions={subscriptions} accounts={accounts} debtEntries={debtEntries} taxRecords={taxRecords} isLoading={isSyncing} onAddSubscription={s => addSubscriptionToSheet(sheetConfig.sheetId, sheetConfig.tabNames.subscriptions, s).then(() => syncData(['subscriptions']))} onEditSubscription={s => handleEditGeneric(s, sheetConfig.tabNames.subscriptions, updateSubscriptionInSheet, setSubscriptions)} onDeleteSubscription={s => handleDeleteGeneric(s, sheetConfig.tabNames.subscriptions, setSubscriptions)} onAddAccount={a => addAccountToSheet(sheetConfig.sheetId, sheetConfig.tabNames.accounts, a).then(() => syncData(['accounts']))} onEditAccount={a => handleEditGeneric(a, sheetConfig.tabNames.accounts, updateAccountInSheet, setAccounts)} onDeleteAccount={a => handleDeleteGeneric(a, sheetConfig.tabNames.accounts, setAccounts)} onAddTaxRecord={handleAddTaxRecord} onEditTaxRecord={handleEditTaxRecord} onDeleteTaxRecord={handleDeleteTaxRecord} isReadOnly={false} />}
               {currentView === ViewState.SETTINGS && <DataIngest config={sheetConfig} onConfigChange={setSheetConfig} onSync={syncData} isSyncing={isSyncing} syncingTabs={syncingTabs} syncStatus={syncStatus} sheetUrl={sheetUrl} onSheetUrlChange={setSheetUrl} isDarkMode={isDarkMode} toggleTheme={toggleTheme} userProfile={userProfile} onProfileChange={setUserProfile} onSessionChange={setAuthSession} onSignOut={handleSignOut} onViewChange={setCurrentView} onTourStart={() => setIsTourActive(true)} activeYear={activeYear} onRolloverSuccess={handleRolloverSuccess} />}
               {currentView === ViewState.PRIVACY && <PrivacyPolicy onBack={() => setCurrentView(ViewState.SETTINGS)} />}

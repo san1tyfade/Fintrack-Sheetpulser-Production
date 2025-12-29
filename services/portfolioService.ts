@@ -11,7 +11,7 @@ export const isDateWithinFocus = (
   focus: TimeFocus, 
   customRange?: { start: string, end: string }
 ): boolean => {
-  if (!dateStr) return false;
+  if (!dateStr || dateStr.length < 4) return false;
   if (focus === TimeFocus.FULL_YEAR) return true;
 
   if (focus === TimeFocus.CUSTOM && customRange) {
@@ -22,8 +22,13 @@ export const isDateWithinFocus = (
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   
-  // Parse target: YYYY-MM-DD at local midnight
-  const [y, m, d] = dateStr.split('-').map(Number);
+  // Parse target: Support YYYY-MM-DD or partial ISO
+  const parts = dateStr.includes('T') ? dateStr.split('T')[0].split('-') : dateStr.split('-');
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10) || 1;
+  
+  if (isNaN(y) || isNaN(m)) return false;
   const target = new Date(y, m - 1, d);
 
   switch (focus) {
@@ -39,6 +44,8 @@ export const isDateWithinFocus = (
     case TimeFocus.ROLLING_12M: {
       const limit = new Date(today);
       limit.setFullYear(today.getFullYear() - 1);
+      // Ensure we compare midnight to midnight
+      limit.setHours(0, 0, 0, 0);
       return target >= limit;
     }
     default:
@@ -130,7 +137,8 @@ export const calculateAttribution = (
       break;
     case TimeFocus.FULL_YEAR:
       if (history.length > 0) {
-        anchorDate = new Date(history.sort((a,b) => a.date.localeCompare(b.date))[0].date);
+        const sorted = [...history].sort((a,b) => a.date.localeCompare(b.date));
+        anchorDate = new Date(sorted[0].date);
       }
       break;
   }
