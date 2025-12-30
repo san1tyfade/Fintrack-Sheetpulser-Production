@@ -277,14 +277,15 @@ export const calculateTemporalVariance = (
         .map(curr => {
             const prevTotal = shadowMap.get(curr.name) || 0;
             const delta = curr.total - prevTotal;
-            const pct = prevTotal > 0 ? (delta / prevTotal) * 100 : 100;
+            // Renamed pct to variancePct to fix Property 'variancePct' does not exist error in FlowAnalytics.tsx
+            const variancePct = prevTotal > 0 ? (delta / prevTotal) * 100 : 100;
             
             return {
                 name: curr.name,
                 currentTotal: curr.total,
                 prevTotal,
                 delta,
-                pct
+                variancePct
             };
         });
 

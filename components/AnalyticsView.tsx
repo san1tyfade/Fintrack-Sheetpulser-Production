@@ -1,9 +1,7 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Asset, NetWorthEntry, Trade, TimeFocus, Investment, NormalizedTransaction, CustomDateRange, PortfolioLogEntry, AnalyticsSubView, IncomeEntry, ExpenseEntry } from '../types';
-import { 
-  BarChart4, Receipt, TrendingUp, Sparkles
-} from 'lucide-react';
+import { BarChart4, Receipt, TrendingUp, Sparkles, LayoutGrid } from 'lucide-react';
 import { TimeFocusSelector } from './TimeFocusSelector';
 import { FlowAnalytics } from './analytics/FlowAnalytics';
 import { PortfolioAnalytics } from './analytics/PortfolioAnalytics';
@@ -21,7 +19,7 @@ interface AnalyticsViewProps {
 }
 
 export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ 
-  timeline, portfolioHistory, trades, incomeData, expenseData, isLoading 
+  timeline, portfolioHistory, incomeData, expenseData, trades, isLoading, assets 
 }) => {
   const [subView, setSubView] = useState<AnalyticsSubView>('FLOW');
   const [timeFocus, setTimeFocus] = useState<TimeFocus>(TimeFocus.ROLLING_12M);
@@ -31,44 +29,34 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   });
 
   return (
-    <div className="space-y-10 animate-fade-in pb-24">
-      <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 border-b border-slate-200 dark:border-slate-800 pb-8">
-        <div className="space-y-6">
-          <div className="flex items-center gap-4">
-             <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-lg shadow-blue-500/20">
-                <BarChart4 size={28} />
-             </div>
-             <div>
-                <h2 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">Analytics</h2>
-                <p className="text-slate-500 dark:text-slate-400 font-medium">Institutional-grade data visualization engine</p>
-             </div>
-          </div>
-
-          <div className="flex bg-slate-100 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner w-fit">
-              <button 
-                  onClick={() => setSubView('FLOW')}
-                  className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-                      subView === 'FLOW' 
-                      ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-md' 
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-              >
-                  <Receipt size={16} /> Cash Flow
-              </button>
-              <button 
-                  onClick={() => setSubView('PORTFOLIO')}
-                  className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-                      subView === 'PORTFOLIO' 
-                      ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-md' 
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-              >
-                  <TrendingUp size={16} /> Performance
-              </button>
-          </div>
+    <div className="space-y-8 animate-fade-in pb-24">
+      <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 bg-white dark:bg-slate-800 p-6 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+        <div className="flex items-center gap-4">
+           <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-lg shadow-blue-500/20">
+              <BarChart4 size={24} />
+           </div>
+           <div>
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Sheetscope Analytics</h2>
+              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">A lens to your financial picture</p>
+           </div>
         </div>
 
         <div className="flex flex-col sm:flex-row items-center gap-4">
+            <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
+                <button 
+                    onClick={() => setSubView('FLOW')}
+                    className={`flex items-center gap-2 px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${subView === 'FLOW' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                >
+                    <Receipt size={14} /> Flow
+                </button>
+                <button 
+                    onClick={() => setSubView('PORTFOLIO')}
+                    className={`flex items-center gap-2 px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${subView === 'PORTFOLIO' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                >
+                    <TrendingUp size={14} /> Performance
+                </button>
+            </div>
+            <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-700 hidden sm:block mx-2" />
             <TimeFocusSelector 
                 current={timeFocus} 
                 onChange={setTimeFocus} 
@@ -90,20 +78,18 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
           ) : (
               <PortfolioAnalytics 
                   history={portfolioHistory} 
-                  timeline={timeline}
                   trades={trades}
                   timeFocus={timeFocus} 
                   customRange={customRange} 
-                  onFocusChange={setTimeFocus}
               />
           )}
       </div>
       
-      <div className="pt-20 flex justify-center opacity-20 grayscale pointer-events-none">
-          <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.5em] text-slate-400">
-             <Sparkles size={12} /> Powered by Sheetsense AI
+      <footer className="pt-12 flex justify-center opacity-30 grayscale pointer-events-none">
+          <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.4em] text-slate-400">
+             <Sparkles size={10} /> Intelligence by Sheetsense
           </div>
-      </div>
+      </footer>
     </div>
   );
 };

@@ -1,5 +1,4 @@
-
-import { PortfolioLogEntry, ProcessedPortfolioEntry, TimeFocus, CustomDateRange, NormalizedTransaction } from '../types';
+import { PortfolioLogEntry, ProcessedPortfolioEntry, TimeFocus, CustomDateRange, Trade } from '../types';
 import { isDateWithinFocus } from './portfolioService';
 
 /**
@@ -48,11 +47,12 @@ export const processPortfolioHistory = (
 };
 
 /**
- * Calculates the components of portfolio growth: Contributions (Cash flow in) vs Alpha (Market returns).
+ * Calculates investment performance attribution using snapshots and trades.
+ * Explicitly ignores income/expense ledger data.
  */
 export const calculatePortfolioAttribution = (
     data: ProcessedPortfolioEntry[],
-    timeline: NormalizedTransaction[],
+    trades: Trade[],
     focus: TimeFocus,
     customRange?: CustomDateRange
 ) => {
@@ -62,17 +62,24 @@ export const calculatePortfolioAttribution = (
     const end = data[data.length - 1];
     const totalGrowth = end.totalValue - start.totalValue;
 
-    // Filter timeline for same window to find net savings
-    const windowTransactions = timeline.filter(t => isDateWithinFocus(t.date, focus, customRange));
-    const income = windowTransactions.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0);
-    const expense = windowTransactions.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+    // 1. Identify trade-based flows within the window
+    const windowTrades = trades.filter(t => isDateWithinFocus(t.date, focus, customRange));
     
-    // We assume "Savings" are the primary source of new capital contributions to the portfolio
-    const netContributions = income - expense;
-    const marketAlpha = totalGrowth - netContributions;
+    // As per request: BUYs are Contributions, SELLs are Withdrawals
+    const contributions = windowTrades
+        .filter(t => (t.type || 'BUY').toUpperCase().trim() === 'BUY')
+        .reduce((sum, t) => sum + Math.abs(t.total || 0), 0);
+        
+    const withdrawals = windowTrades
+        .filter(t => (t.type || 'BUY').toUpperCase().trim() === 'SELL')
+        .reduce((sum, t) => sum + Math.abs(t.total || 0), 0);
 
-    // Use a modified Dietz method for percentage return to handle capital flow timing
-    const averageCapital = start.totalValue + (netContributions / 2);
+    const netFlow = contributions - withdrawals;
+    const marketAlpha = totalGrowth - netFlow;
+
+    // Simple Dietz Method for Money-Weighted Return approximation
+    // Divisor accounts for flows entering/leaving mid-period
+    const averageCapital = start.totalValue + (netFlow / 2);
     const alphaPercentage = Math.abs(averageCapital) > 1 
         ? (marketAlpha / Math.abs(averageCapital)) * 100 
         : (start.totalValue > 0 ? (marketAlpha / start.totalValue) * 100 : 0);
@@ -81,7 +88,8 @@ export const calculatePortfolioAttribution = (
         startValue: start.totalValue,
         endValue: end.totalValue,
         totalGrowth,
-        netContributions,
+        contributions,
+        withdrawals,
         marketAlpha,
         alphaPercentage
     };
