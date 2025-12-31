@@ -1,10 +1,10 @@
 
 import React, { useMemo, memo, useState, useEffect } from 'react';
-import { TaxRecord } from '../types';
+import { TaxRecord } from '../../types';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Landmark, Sparkles, History, Plus, Pencil, Trash2, X, Loader2, ArrowUpRight, ArrowDownRight, Coins, GraduationCap, Lock, Save } from 'lucide-react';
-import { formatBaseCurrency } from '../services/currencyService';
-import { TAX_ACCOUNTS, TAX_SUMMARY_ACCOUNTS, TAX_LIMIT_TYPES, TAX_WITHDRAWAL_TYPES, calculateTaxStats } from '../services/taxService';
+import { ShieldCheck, Landmark, Sparkles, History, Plus, Pencil, Trash2, X, Loader2, ArrowUpRight, ArrowDownRight, GraduationCap, Lock, Save } from 'lucide-react';
+import { formatBaseCurrency } from '../../services/currencyService';
+import { TAX_ACCOUNTS, TAX_SUMMARY_ACCOUNTS, TAX_LIMIT_TYPES, TAX_WITHDRAWAL_TYPES, calculateTaxStats } from '../../services/taxService';
 
 interface TaxRoomTrackerProps {
   taxRecords: TaxRecord[];
@@ -158,7 +158,7 @@ export const TaxRoomTracker: React.FC<TaxRoomTrackerProps> = ({ taxRecords, isLo
                 </div>
                 <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[2.5rem] overflow-hidden shadow-sm">
                     <div className="px-10 py-6 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="flex items-center gap-3"><History size={20} className="text-slate-400" /><h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em]">{activeTab} Ledger Detail</h4><div className="group relative flex items-center"><span className="flex items-center gap-1 text-[9px] font-black text-amber-600 dark:text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 uppercase tracking-tighter"><Lock size={10} /> Private Vault</span><div className="absolute left-0 bottom-full mb-2 w-48 p-2 bg-slate-900 text-white text-[9px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 leading-tight">Stored locally on-device.</div></div></div>
+                        <div className="flex items-center gap-3"><History size={20} className="text-slate-400" /><h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em]">{activeTab} Ledger Detail</h4><div className="group relative flex items-center"><span className="flex items-center gap-1 text-[9px] font-black text-amber-600 dark:text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 uppercase tracking-tighter"><Lock size={10} /> Private Vault</span><div className="absolute left-0 bottom-full mb-2 w-48 p-2 bg-slate-900 text-white text-[10px] leading-relaxed rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 leading-tight">Stored locally on-device.</div></div></div>
                         <span className="text-[9px] font-black text-blue-500 uppercase bg-blue-500/10 px-4 py-1.5 rounded-full border border-blue-500/20 w-fit">{activeRecords.length} Items Found</span>
                     </div>
                     <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-slate-50/30 dark:bg-slate-900/10 border-b border-slate-100 dark:border-slate-700"><tr><th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th><th className="px-6 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</th><th className="px-6 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Value</th><th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Description</th><th className="px-6 py-6 w-24"></th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">{activeRecords.map(record => {

@@ -1,5 +1,6 @@
 {
   "name": "Sheetsense",
-  "description": "Making sense of your finances",
+  "description": "Institutional-grade personal finance orchestration with local-first privacy.",
+  "version": "1.0.0",
   "requestFramePermissions": []
 }

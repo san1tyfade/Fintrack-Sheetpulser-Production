@@ -4,7 +4,7 @@ import { NormalizedTransaction, TimeFocus, CustomDateRange, IncomeEntry, Expense
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Line, Area, BarChart, Bar, Cell, LabelList
 } from 'recharts';
-import { LayoutGrid, Activity, PiggyBank, Columns, ArrowUpDown, Zap } from 'lucide-react';
+import { LayoutGrid, Activity, PiggyBank, Columns, ArrowUpDown, Zap, Loader2 } from 'lucide-react';
 import { formatBaseCurrency } from '../../services/currencyService';
 import { aggregateDimensions, aggregateComparativeTrend, getTemporalWindows, calculateTemporalVariance } from '../../services/temporalService';
 import { isDateWithinFocus } from '../../services/portfolioService';
@@ -48,7 +48,7 @@ export const FlowAnalytics: React.FC<FlowAnalyticsProps> = ({ timeline, incomeDa
           const prevTotal = shadowMap.get(curr.name) || 0;
           const delta = curr.total - prevTotal;
           const pctOfTotal = total > 0 ? (curr.total / total) * 100 : 0;
-          return { ...curr, prevTotal, delta, pctOfTotal, label: `${formatBaseCurrency(curr.total)} — ${pctOfTotal.toFixed(1)}%` };
+          return { ...curr, prevTotal, delta, pctOfTotal, label: `${formatBaseCurrency(Math.round(curr.total))} — ${pctOfTotal.toFixed(1)}%` };
       }).sort((a, b) => sortMode === 'VARIANCE' ? Math.abs(b.delta) - Math.abs(a.delta) : b.total - a.total);
   }, [activeTimeline, shadowTimeline, drillPath, activeType, sortMode, periodStats]);
 
@@ -124,8 +124,8 @@ export const FlowAnalytics: React.FC<FlowAnalyticsProps> = ({ timeline, incomeDa
                   return (
                     <div className="bg-slate-900 border border-slate-700 p-4 rounded-2xl shadow-2xl space-y-2">
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-800 pb-1">{d.name}</p>
-                        <div className="flex justify-between gap-6 text-[10px] font-black"><span className="text-slate-500 uppercase">Current</span><span className="text-white font-mono">{formatBaseCurrency(d.total)}</span></div>
-                        {isComparisonMode && <div className="flex justify-between gap-6 text-[10px] font-black"><span className="text-slate-500 uppercase">Prev</span><span className="text-slate-400 font-mono">{formatBaseCurrency(d.prevTotal)}</span></div>}
+                        <div className="flex justify-between gap-6 text-[10px] font-black"><span className="text-slate-500 uppercase">Current</span><span className="text-white font-mono">{formatBaseCurrency(Math.round(d.total))}</span></div>
+                        {isComparisonMode && <div className="flex justify-between gap-6 text-[10px] font-black"><span className="text-slate-500 uppercase">Prev</span><span className="text-slate-400 font-mono">{formatBaseCurrency(Math.round(d.prevTotal))}</span></div>}
                         <div className="flex justify-between gap-6 text-[10px] font-black border-t border-slate-800 pt-1"><span className="text-slate-500 uppercase">Weight</span><span className="text-blue-400 font-mono">{d.pctOfTotal.toFixed(1)}%</span></div>
                     </div>
                   );
@@ -137,7 +137,17 @@ export const FlowAnalytics: React.FC<FlowAnalyticsProps> = ({ timeline, incomeDa
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-          ) : <div className="h-full flex items-center justify-center text-slate-400 opacity-30 text-xs font-black uppercase">No Data in Focus</div>}
+          ) : timeline.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4 opacity-50">
+               <Loader2 className="animate-spin" size={32} />
+               <p className="text-xs font-black uppercase tracking-[0.2em]">Assembling Engine...</p>
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2 opacity-30">
+               <LayoutGrid size={48} strokeWidth={1} />
+               <p className="text-xs font-black uppercase tracking-[0.2em]">No Data in Focus</p>
+            </div>
+          )}
         </AnalyticsCard>
 
         <div className="xl:col-span-5 flex flex-col gap-8">
@@ -146,8 +156,11 @@ export const FlowAnalytics: React.FC<FlowAnalyticsProps> = ({ timeline, incomeDa
               <ComposedChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid vertical={false} opacity={0.05} />
                 <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}} tickFormatter={(v) => v ? new Date(v + '-02').toLocaleDateString(undefined, { month: 'short' }) : ''} />
-                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fill: '#cbd5e1'}} tickFormatter={(v) => `$${v >= 1000 ? (v/1000).toFixed(0) + 'k' : v}`} />
-                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '1rem' }} />
+                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fill: '#cbd5e1'}} tickFormatter={(v) => `$${v >= 1000 ? Math.round(v/1000) + 'k' : Math.round(v)}`} />
+                <Tooltip 
+                    contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '1rem' }} 
+                    formatter={(v: number) => [formatBaseCurrency(Math.round(v)), '']}
+                />
                 <Line name="prev" type="monotone" dataKey="shadow" stroke="#94a3b8" strokeWidth={2} strokeDasharray="6 4" dot={false} />
                 <Area name="curr" type="monotone" dataKey="current" fill="#3b82f6" fillOpacity={0.08} />
                 <Line name="curr" type="monotone" dataKey="current" stroke="#3b82f6" strokeWidth={4} dot={{ r: 4, fill: '#3b82f6', stroke: '#fff' }} />
@@ -159,7 +172,7 @@ export const FlowAnalytics: React.FC<FlowAnalyticsProps> = ({ timeline, incomeDa
             {insightData ? (
               <div className="relative z-10 space-y-2">
                 <h4 className="text-xl font-black flex items-center gap-2"><Zap className="text-blue-400" size={24} />Period Insight</h4>
-                <p className="text-sm opacity-60 leading-relaxed font-medium">Significant movement in <span className="text-white font-bold">{insightData.topMover.name}</span>. {activeType === 'EXPENSE' ? 'Spend' : 'Income'} {insightData.topMover.delta > 0 ? 'rose' : 'dropped'} by <span className={insightData.isDesirable ? 'text-emerald-400' : 'text-rose-400'}>{formatBaseCurrency(Math.abs(insightData.topMover.delta))} ({Math.abs(insightData.topMover.variancePct).toFixed(0)}%)</span> PoP.</p>
+                <p className="text-sm opacity-60 leading-relaxed font-medium">Significant movement in <span className="text-white font-bold">{insightData.topMover.name}</span>. {activeType === 'EXPENSE' ? 'Spend' : 'Income'} {insightData.topMover.delta > 0 ? 'rose' : 'dropped'} by <span className={insightData.isDesirable ? 'text-emerald-400' : 'text-rose-400'}>{formatBaseCurrency(Math.abs(Math.round(insightData.topMover.delta)))} ({Math.abs(insightData.topMover.variancePct).toFixed(0)}%)</span> PoP.</p>
               </div>
             ) : <p className="text-xs font-black uppercase text-slate-500 tracking-[0.2em]">Select sub-annual focus for PoP insights</p>}
           </div>

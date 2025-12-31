@@ -42,10 +42,10 @@ const DEFAULT_CONFIG: SheetConfig = {
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
     logData: 'logdata',
-    portfolioLog: 'portfolio_log',
+    portfolioLog: 'portfoliolog',
     debt: 'debt',
     income: 'Income',
-    expenses: 'Income'
+    expenses: 'expense'
   }
 };
 
@@ -256,9 +256,9 @@ function App() {
     setter(prev => prev.map(i => i.id === item.id ? item : i));
   }, [sheetConfig, selectedYear, activeYear]);
 
-  const handleAddTaxRecord = useCallback(async (record: TaxRecord) => { setTaxRecords(prev => [...prev, record]); }, [setTaxRecords]);
+  const handleAddTaxRecord = useCallback(async (record: TaxRecord) => { setTaxRecords(prev => [...prev, record]); refreshArchiveMeta(); }, [setTaxRecords]);
   const handleEditTaxRecord = useCallback(async (record: TaxRecord) => { setTaxRecords(prev => prev.map(r => r.id === record.id ? record : r)); }, [setTaxRecords]);
-  const handleDeleteTaxRecord = useCallback(async (record: TaxRecord) => { setTaxRecords(prev => prev.filter(r => r.id !== record.id)); }, [setTaxRecords]);
+  const handleDeleteTaxRecord = useCallback(async (record: TaxRecord) => { setTaxRecords(prev => prev.filter(r => r.id !== record.id)); refreshArchiveMeta(); }, [setTaxRecords]);
   const handleSignOut = useCallback(() => { signOut(); setUserProfile(null); setAuthSession(null); setCurrentView(ViewState.DASHBOARD); }, [setUserProfile, setAuthSession]);
   const handleRolloverSuccess = useCallback((nextYear: number) => {
       setActiveYear(nextYear);
@@ -335,7 +335,7 @@ function App() {
       </main>
 
       <div className="fixed bottom-24 md:bottom-8 right-6 z-50 animate-in slide-in-from-bottom-4 duration-500">
-        <button onClick={toggleGhostMode} className={`p-4 rounded-full shadow-2xl transition-all duration-300 group flex items-center gap-2 overflow-hidden ${isGhostMode ? 'bg-amber-500 text-white ring-4 ring-amber-500/20' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500/50'}`} title={isGhostMode ? 'Privacy Mode Active' : 'Privacy Mode Off'}>
+        <button onClick={toggleGhostMode} className={`p-4 rounded-full shadow-2xl transition-all duration-300 group flex items-center gap-2 overflow-hidden ${isGhostMode ? 'bg-amber-50 text-white ring-4 ring-amber-500/20' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500/50'}`} title={isGhostMode ? 'Privacy Mode Active' : 'Privacy Mode Off'}>
           {isGhostMode ? <EyeOff size={24} /> : <Eye size={24} />}
           <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-500 whitespace-nowrap text-sm font-black uppercase tracking-widest px-0 group-hover:px-2">{isGhostMode ? 'Privacy On' : 'Privacy Off'}</span>
         </button>

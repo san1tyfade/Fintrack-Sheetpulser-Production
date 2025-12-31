@@ -83,6 +83,25 @@ export const StatHighlight: React.FC<StatHighlightProps> = ({
   );
 };
 
+export const StandardTooltip = ({ active, payload, isDarkMode }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 p-4 rounded-2xl shadow-2xl space-y-2">
+      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-800 pb-1">
+        {payload[0].payload.name || payload[0].payload.date || payload[0].payload.label}
+      </p>
+      {payload.map((p: any, i: number) => (
+        <div key={i} className="flex justify-between gap-6 text-[10px] font-black">
+          <span className="text-slate-500 uppercase">{p.name || p.dataKey}</span>
+          <span className="text-white font-mono">
+            {typeof p.value === 'number' ? formatBaseCurrency(p.value) : p.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export const DrillBreadcrumbs: React.FC<{ path: string[]; onReset: () => void; onPop: (idx: number) => void; type: string }> = ({ path, onReset, onPop, type }) => (
   <nav className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-inner">
     <button onClick={onReset} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${path.length === 0 ? 'text-blue-600 bg-blue-500/10' : 'text-slate-400 hover:text-slate-600'}`}>
