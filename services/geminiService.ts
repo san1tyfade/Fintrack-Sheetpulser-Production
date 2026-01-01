@@ -28,7 +28,7 @@ const HEADER_KEYWORDS: Record<string, string[]> = {
     accounts: ['institution', 'bank', 'account', 'type', 'card'],
     logData: ['date', 'worth', 'total', 'balance', 'net'],
     portfolioLog: ['date', 'tfsa', 'rrsp', 'fhsa', 'crypto', 'resp'],
-    debt: ['name', 'owed', 'rate', 'payment', 'loan', 'mortgage', 'student loan']
+    debt: ['month', 'startingbalance', 'you paid', 'interest', 'principal', 'endingbalance']
 };
 
 export const normalizeTicker = (ticker: string): string => {
@@ -202,7 +202,7 @@ const createTradeParser = (headers: string[]) => {
         total: ['total', 'value', 'total value', 'net amount', 'settlement'],
         fee: ['fee', 'commission', 'transaction fee']
     });
-    return (values: string[]): Trade | null => {
+  return (values: string[]): Trade | null => {
         const ticker = (idx.ticker !== -1 ? values[idx.ticker] : '') || 'UNKNOWN';
         if (ticker === 'UNKNOWN') return null;
         const date = (idx.date !== -1 ? values[idx.date] : '') || new Date().toISOString().split('T')[0];
@@ -313,22 +313,32 @@ const createPortfolioLogParser = (headers: string[]) => {
     };
 };
 
-const createDebtParser = (headers: string[]) => {
-    const idx = resolveIndices(headers, {
-        name: ['name', 'debt name', 'loan', 'description', 'type', 'account', 'mortgage', 'student loan'],
-        owed: ['remaining', 'loan remaining', 'debt owed', 'amount', 'balance', 'principal', 'debt'],
-        rate: ['interest rate', 'rate', 'apr', 'interest'],
-        payment: ['monthly payment', 'payment', 'min payment', 'monthly'],
-        date: ['date', 'as of', 'updated', 'on']
-    });
+const createDebtParser = () => {
+    // HARDCODED DEBT PARSER FOR AMORTIZATION TABLE:
+    // Column B (Index 1) = Month/Date
+    // Column C (Index 2) = Starting Balance
+    // Column D (Index 3) = You Paid (Monthly Payment)
+    // Column G (Index 6) = Ending Balance (Outstanding)
     return (values: string[]): DebtEntry | null => {
-        let name = (idx.name !== -1 ? values[idx.name] : '') || 'Debt Entry';
-        const amountOwed = parseNumber(idx.owed !== -1 ? values[idx.owed] : '0');
-        const interestRate = parseNumber(idx.rate !== -1 ? values[idx.rate] : '0');
-        const monthlyPayment = parseNumber(idx.payment !== -1 ? values[idx.payment] : '0');
-        const date = idx.date !== -1 ? values[idx.date] : undefined;
-        if (amountOwed === 0 && monthlyPayment === 0 && interestRate === 0) return null;
-        return { id: generateId(), name, amountOwed, interestRate, monthlyPayment, date };
+        const dateStr = (values[1] || '').trim();
+        const iso = parseFlexibleDate(dateStr);
+        if (!iso) return null;
+
+        const amountOwed = parseNumber(values[6]); // Column G
+        const monthlyPayment = parseNumber(values[3]); // Column D
+        const startingBalance = parseNumber(values[2]); // Column C
+
+        // Skip rows with no data
+        if (startingBalance === 0 && monthlyPayment === 0 && amountOwed === 0) return null;
+
+        return { 
+            id: generateId(), 
+            name: `Loan Schedule (${dateStr})`, 
+            amountOwed, 
+            interestRate: 0, 
+            monthlyPayment, 
+            date: iso 
+        };
     };
 };
 
@@ -350,6 +360,23 @@ export const parseRawData = async <T,>(
   if (dataType === 'income') return parseIncomeAndExpenses(lines) as T;
   if (dataType === 'detailedExpenses') return parseDetailedExpenses(lines) as T;
   if (dataType === 'detailedIncome') return parseDetailedIncome(lines) as T;
+
+  // SPECIAL HANDLING FOR DEBT: Skip first 4 rows and process from Row 5 header
+  if (dataType === 'debt') {
+      const results: DebtEntry[] = [];
+      const parser = createDebtParser();
+      // Schedule data starts on Row 6 (Index 5) after Row 5 header
+      for (let i = 5; i < lines.length; i++) {
+          const values = parseCSVLine(lines[i]);
+          if (values.every(v => v === '')) continue;
+          const parsedItem = parser(values);
+          if (parsedItem) {
+              parsedItem.rowIndex = i;
+              results.push(parsedItem);
+          }
+      }
+      return results as T;
+  }
   
   let headerIndex = -1;
   const keywords = HEADER_KEYWORDS[dataType] || [];
@@ -386,7 +413,6 @@ export const parseRawData = async <T,>(
       case 'accounts': parser = createAccountParser(originalHeaders); break;
       case 'logData': parser = createLogDataParser(originalHeaders); break;
       case 'portfolioLog': parser = createPortfolioLogParser(originalHeaders); break;
-      case 'debt': parser = createDebtParser(originalHeaders); break;
   }
   if (!parser) return [] as T;
   const results: any[] = [];
@@ -395,7 +421,7 @@ export const parseRawData = async <T,>(
     if (values.every(v => v === '')) continue;
     const parsedItem = parser(values);
     if (parsedItem) {
-        if (['trades', 'assets', 'subscriptions', 'accounts', 'debt'].includes(dataType)) (parsedItem as any).rowIndex = i;
+        if (['trades', 'assets', 'subscriptions', 'accounts'].includes(dataType)) (parsedItem as any).rowIndex = i;
         results.push(parsedItem);
     }
   }
@@ -431,10 +457,6 @@ const parseIncomeAndExpenses = (lines: string[]): IncomeAndExpenses => {
         const isIncomeLine = lowerFirst.includes('income'); 
         const isCommonExclude = ['net income', 'monthly savings', 'balance', 'expense categorie', 'income categories', 'summary', 'spending ledger'].some(key => lowerFirst.includes(key));
         
-        // TROUBLESHOOTING FIX:
-        // Exclude generic section headers that don't represent actual spending categories.
-        // This prevents header row titles like "Expenses" from picking up date values (e.g., "Jan-25")
-        // and treating them as an expense value of "$25".
         const isSectionHeader = lowerFirst === 'expenses' || lowerFirst === 'income' || lowerFirst === 'total';
 
         if (lowerFirst && !isIncomeLine && !isCommonExclude && !isSectionHeader && !lowerFirst.includes('total')) {
@@ -480,15 +502,30 @@ export const parseDetailedIncome = (lines: string[]): LedgerData => {
     const categories: LedgerCategory[] = [];
     let headerIdx = -1;
     let bestMonthCount = 0;
-    for (let i = 0; i < Math.min(lines.length, 15); i++) {
+    
+    // Improved Income Header Detection
+    for (let i = 0; i < Math.min(lines.length, 50); i++) {
         const row = parseCSVLine(lines[i]);
+        const firstCell = (row[0] || '').toLowerCase();
+        
         let count = 0;
         for (let j = 1; j < row.length; j++) {
-            const val = (row[j] || '').trim().toLowerCase();
-            if (val && MONTH_NAMES.some(m => val.startsWith(m))) count++;
+            const val = (row[j] || '').trim();
+            if (parseFlexibleDate(val)) count++;
         }
-        if (count > bestMonthCount) { bestMonthCount = count; headerIdx = i; }
+        
+        const isTargetRow = firstCell.includes("income") || firstCell.includes("revenue") || firstCell.includes("earnings");
+        const isSummary = firstCell.includes("total") || firstCell.includes("net") || firstCell.includes("snapshot");
+        
+        if (count > 0 && isTargetRow && !isSummary) {
+            if (count >= bestMonthCount) {
+                bestMonthCount = count;
+                headerIdx = i;
+                break;
+            }
+        }
     }
+    
     if (headerIdx === -1 || headerIdx >= lines.length - 1) return { months: [], categories: [] };
     const headerRow = parseCSVLine(lines[headerIdx]);
     const months: string[] = [];
@@ -529,10 +566,10 @@ export const parseDetailedExpenses = (lines: string[]): LedgerData => {
     let headerIdx = -1;
     let bestMonthCount = 0;
     
-    // Scan up to 200 lines to find the start of the expense section in a consolidated sheet
-    for (let i = 0; i < Math.min(lines.length, 200); i++) {
+    // Improved Expense Header Detection - Specifically skipping income-looking sections
+    for (let i = 0; i < Math.min(lines.length, 250); i++) {
         const row = parseCSVLine(lines[i]);
-        const firstCell = (row[0] || '').toLowerCase();
+        const firstCell = (row[0] || '').toLowerCase().trim();
         
         let count = 0;
         for (let j = 1; j < row.length; j++) {
@@ -540,15 +577,31 @@ export const parseDetailedExpenses = (lines: string[]): LedgerData => {
             if (parseFlexibleDate(val)) count++;
         }
         
-        const isTitleRow = firstCell.includes("expense categorie") || firstCell.includes("spending ledger") || firstCell === 'expenses';
+        // Strict keywords for identifying the Expense ledger start
+        const isExpenseTitle = firstCell.includes("expense") || 
+                               firstCell.includes("spending") || 
+                               firstCell.includes("outgoing") ||
+                               firstCell.includes("categories");
         
-        // We look for a row that has date headers AND specifically looks like an expense section starter
+        // Anti-keywords: if it says "Income" or "Summary", it's likely not the granular expense ledger
+        const isIncomeOrNet = firstCell.includes("income") || 
+                              firstCell.includes("net") || 
+                              firstCell.includes("savings") ||
+                              firstCell.includes("revenue") ||
+                              firstCell === 'total';
+        
         if (count > 0) {
-            if (count > bestMonthCount || (count === bestMonthCount && isTitleRow)) {
+            // We want a row with dates that explicitly targets expenses and is NOT income
+            if (isExpenseTitle && !isIncomeOrNet) {
                 bestMonthCount = count;
                 headerIdx = i;
-                // If we found the explicit "Expense Categories" label with dates, we can stop searching
-                if (isTitleRow) break;
+                break; // Found perfect match
+            }
+            
+            // Fallback: Pick the row with the most months that doesn't explicitly look like income
+            if (count >= bestMonthCount && !isIncomeOrNet) {
+                bestMonthCount = count;
+                headerIdx = i;
             }
         }
     }
@@ -561,13 +614,13 @@ export const parseDetailedExpenses = (lines: string[]): LedgerData => {
         const val = (headerRow[j] || '').trim();
         if (parseFlexibleDate(val)) { months.push(val); monthColIndices.push(j); }
     }
+    
     let currentCategory: LedgerCategory | null = null;
     for (let i = headerIdx + 1; i < lines.length; i++) {
         const row = parseCSVLine(lines[i]);
         const name = (row[0] || '').trim();
         const lowerName = name.toLowerCase();
         
-        // Skip empty or purely descriptive/title rows that aren't categories
         if (!name) { 
             if (currentCategory) { 
                 categories.push(currentCategory); 
@@ -577,7 +630,14 @@ export const parseDetailedExpenses = (lines: string[]): LedgerData => {
         }
         if (!isSafeKey(name)) continue;
         
-        // In a unified sheet, we might hit the end of the expense section or another unrelated section
+        // Stop if we hit a new section header that looks like income or the absolute bottom
+        const isIncomeSection = lowerName.includes('income sources') || 
+                                lowerName.includes('revenue') || 
+                                lowerName === 'income' ||
+                                lowerName.includes('monthly savings');
+        
+        if (isIncomeSection) break;
+
         if (lowerName === 'total' || lowerName.includes('net income') || lowerName.includes('total monthly') || lowerName.includes('summary')) {
             if (currentCategory) {
                 categories.push(currentCategory);
@@ -590,13 +650,13 @@ export const parseDetailedExpenses = (lines: string[]): LedgerData => {
         let hasData = false;
         let totalRowSum = 0;
         monthColIndices.forEach(colIdx => {
-            const val = parseNumber(row[colIdx]);
+            const val = Math.abs(parseNumber(row[colIdx]));
             monthlyValues.push(val);
             if (val !== 0) hasData = true;
             totalRowSum += val;
         });
 
-        // A category row has no data in the month columns, a sub-category/item row does
+        // A category row usually has no data in the month columns, a sub-category/item row does
         if (!hasData) {
             if (currentCategory) categories.push(currentCategory);
             currentCategory = { name: name, subCategories: [], total: 0, rowIndex: i };
@@ -607,10 +667,36 @@ export const parseDetailedExpenses = (lines: string[]): LedgerData => {
                 currentCategory.total += totalRowSum; 
             }
             else { 
-                categories.push({ name: name, subCategories: [subItem], total: totalRowSum, rowIndex: i }); 
+                // Handle cases where subcategories exist before a header
+                categories.push({ name: 'Uncategorized', subCategories: [subItem], total: totalRowSum, rowIndex: i }); 
             }
         }
     }
     if (currentCategory && !categories.find(c => c.name === currentCategory?.name)) categories.push(currentCategory);
     return { months, categories };
+};
+
+/**
+ * Utility to convert detailed LedgerData into summary ExpenseEntry format.
+ * This ensures the Dashboard summary matches the Sankey details.
+ */
+export const deriveSummaryFromLedger = (ledger: LedgerData, yearHint: string): ExpenseEntry[] => {
+    if (!ledger.months || !ledger.categories.length) return [];
+    
+    return ledger.months.map((monthStr, mIdx) => {
+        const categories: Record<string, number> = {};
+        let total = 0;
+        
+        ledger.categories.forEach(cat => {
+            const catMonthSum = cat.subCategories.reduce((sum, sub) => sum + (sub.monthlyValues[mIdx] || 0), 0);
+            if (catMonthSum !== 0) {
+                categories[cat.name] = Math.abs(catMonthSum);
+                total += Math.abs(catMonthSum);
+            }
+        });
+
+        // Use a default day (01) for ISO compatibility
+        const isoDate = `${yearHint}-${String(mIdx + 1).padStart(2, '0')}-01`;
+        return { date: isoDate, monthStr, categories, total };
+    }).filter(e => e.total > 0);
 };

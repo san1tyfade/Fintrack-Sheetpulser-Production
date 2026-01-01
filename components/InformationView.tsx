@@ -78,7 +78,6 @@ export const InformationView: React.FC<InformationViewProps> = ({
             Registry
             {isLoading && <Loader2 className="animate-spin text-blue-500" size={28} />}
           </h2>
-          <p className="text-slate-500 dark:text-slate-400 font-medium mt-2">Comprehensive financial inventory and asset management hub.</p>
         </div>
         <div className="flex bg-slate-100 dark:bg-slate-900/50 p-2 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-inner">
             {[ 

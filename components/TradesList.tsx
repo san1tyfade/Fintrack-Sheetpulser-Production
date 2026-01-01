@@ -72,7 +72,6 @@ export const TradesList: React.FC<TradesListProps> = ({
                         <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-3 py-1 rounded-full border border-emerald-500/20 font-black uppercase tracking-widest">{totalStats.uniqueAssets} assets</span>
                     </div>
                 </h2>
-                <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Audit trail and acquisition ledger.</p>
             </div>
 
             <div className="flex items-center gap-3">

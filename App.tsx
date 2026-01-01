@@ -13,7 +13,7 @@ import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { TermsOfService } from './components/TermsOfService';
 import { GuidedTour } from './components/GuidedTour';
 import { ViewState, Asset, Investment, Trade, Subscription, BankAccount, SheetConfig, NetWorthEntry, PortfolioLogEntry, DebtEntry, IncomeEntry, ExpenseEntry, IncomeAndExpenses, ExchangeRates, LedgerData, UserProfile, TourStep, TaxRecord, ArchiveMeta, TimeFocus, NormalizedTransaction } from './types';
-import { fetchSheetData, fetchTabNames } from './services/sheetService';
+import { fetchSheetData, fetchTabNames, detectActiveYearFromSheet } from './services/sheetService';
 import { parseRawData } from './services/geminiService';
 import { fetchLiveRates } from './services/currencyService';
 import { reconcileInvestments } from './services/portfolioService';
@@ -179,19 +179,39 @@ function App() {
         setIsSyncing(false);
         return;
     }
+
+    // CROSS-DEVICE ROLLOVER SYNC: Detect if active year has changed in the sheet
+    if (!specificTabs || specificTabs.includes('income')) {
+        const detectedYear = await detectActiveYearFromSheet(sheetConfig.sheetId, sheetConfig.tabNames.income);
+        if (detectedYear && detectedYear !== activeYear) {
+            console.log(`Detected year rollover in spreadsheet: ${activeYear} -> ${detectedYear}`);
+            setActiveYear(detectedYear);
+            // If we were looking at the old "live" year, switch to the new one
+            if (selectedYear === activeYear) {
+                setSelectedYear(detectedYear);
+                // Return early to re-trigger sync with new year context
+                setIsSyncing(false);
+                return;
+            }
+        }
+    }
+
     const allKeys = Object.keys(sheetConfig.tabNames) as (keyof SheetConfig['tabNames'])[];
     const targets = specificTabs && specificTabs.length > 0 ? specificTabs : allKeys;
     setSyncingTabs(prev => { const next = new Set(prev); targets.forEach(t => next.add(t)); return next; });
+    
     const getTabName = (baseKey: keyof SheetConfig['tabNames']) => {
         const baseName = sheetConfig.tabNames[baseKey];
         if (targetYear === activeYear) return baseName;
         if (['income', 'expenses'].includes(baseKey)) return `${baseName}-${String(targetYear).slice(-2)}`;
         return baseName;
     };
+    
     const fetchSafe = async <T,>(tabName: string, type: any): Promise<T> => {
         const rawData = await fetchSheetData(sheetConfig.sheetId, tabName); 
         return await parseRawData<T>(rawData, type); 
     };
+
     try {
         let missingArchives = false;
         await Promise.all(targets.map(async key => {
@@ -212,13 +232,11 @@ function App() {
                         setExpenseData(finData.expenses);
                         setDetailedIncome(await fetchSafe<LedgerData>(actualTabName, 'detailedIncome'));
                         
-                        // If expenses and income are on the same tab, we can also populate detailedExpenses here
                         if (sheetConfig.tabNames.expenses === sheetConfig.tabNames.income) {
                              setDetailedExpenses(await fetchSafe(actualTabName, 'detailedExpenses'));
                         }
                         break;
                     case 'expenses': 
-                        // Only fetch separately if it's a different tab than income
                         if (sheetConfig.tabNames.expenses !== sheetConfig.tabNames.income) {
                             setDetailedExpenses(await fetchSafe(actualTabName, 'detailedExpenses')); 
                         }
@@ -236,7 +254,7 @@ function App() {
         if (!specificTabs) scanForRemoteArchives();
     } catch (e: any) { setSyncStatus({ type: 'error', msg: e.message || "Sync failed." }); }
     finally { setIsSyncing(false); }
-  }, [sheetConfig, selectedYear, activeYear, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setPortfolioHistory, setDebtEntries, setIncomeData, setExpenseData, setDetailedExpenses, setDetailedIncome, setLastUpdatedStr, setAuthSession, scanForRemoteArchives]);
+  }, [sheetConfig, selectedYear, activeYear, setAssets, setInvestments, setTrades, setSubscriptions, setAccounts, setNetWorthHistory, setPortfolioHistory, setDebtEntries, setIncomeData, setExpenseData, setDetailedExpenses, setDetailedIncome, setLastUpdatedStr, setAuthSession, scanForRemoteArchives, setActiveYear]);
 
   useEffect(() => {
     if (sheetConfig.sheetId && incomeData.length === 0 && !isSyncing && !discoveryAttempted[selectedYear]) {

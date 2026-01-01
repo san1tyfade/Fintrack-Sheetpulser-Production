@@ -11,6 +11,7 @@ export interface Asset {
 
 export interface Investment {
   id: string;
+  rowIndex?: number;
   ticker: string;
   name: string;
   quantity: number;
@@ -60,6 +61,7 @@ export interface BankAccount {
 
 export interface DebtEntry {
   id: string;
+  rowIndex?: number;
   name: string;
   amountOwed: number;
   interestRate: number;

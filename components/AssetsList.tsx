@@ -49,7 +49,6 @@ export const AssetsList: React.FC<AssetsListProps> = ({
                   </button>
               )}
           </div>
-          <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Professional asset inventory and cross-currency evaluation.</p>
         </div>
       </header>
 

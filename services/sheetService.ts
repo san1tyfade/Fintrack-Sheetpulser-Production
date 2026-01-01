@@ -40,7 +40,7 @@ export const fetchSheetData = async (sheetId: string, tabName: string): Promise<
     if (!cleanId) throw new Error("INVALID_ID: Invalid Spreadsheet ID.");
     if (!tabName) throw new Error("MISSING_TAB: Tab name is required.");
 
-    const range = encodeURIComponent(`${tabName}!A1:ZZ`);
+    const range = encodeURIComponent(`'${tabName}'!A1:ZZ`);
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}/values/${range}?valueRenderOption=FORMATTED_VALUE`;
     
     try {
@@ -80,6 +80,39 @@ export const fetchSheetData = async (sheetId: string, tabName: string): Promise<
 };
 
 /**
+ * Probes the spreadsheet to determine the currently active financial year.
+ * This ensures cross-device sync when a year is rolled over.
+ */
+export const detectActiveYearFromSheet = async (sheetId: string, incomeTab: string): Promise<number | null> => {
+    const token = getAccessToken();
+    if (!token || !sheetId) return null;
+
+    // Check Cell B3 which contains the first month header (e.g., "Jan-25")
+    const range = encodeURIComponent(`'${incomeTab}'!B3`);
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}`;
+
+    try {
+        const res = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        const header = data.values?.[0]?.[0];
+        if (!header) return null;
+
+        const yearMatch = header.match(/-(\d{2,4})$/);
+        if (yearMatch) {
+            const yearPart = yearMatch[1];
+            return yearPart.length === 2 ? 2000 + parseInt(yearPart) : parseInt(yearPart);
+        }
+        return null;
+    } catch (e) {
+        console.warn("Year detection failed", e);
+        return null;
+    }
+};
+
+/**
  * Fetches metadata for all tabs in the spreadsheet.
  */
 export const fetchTabNames = async (sheetId: string): Promise<string[]> => {
@@ -110,8 +143,7 @@ export const validateSheetTab = async (sheetId: string, tabName: string): Promis
         const cleanId = extractSheetId(sheetId);
         if (!cleanId || !tabName || !token) return false;
         
-        // Remove empty ?key= parameter as it can cause authentication mismatches
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}/values/${encodeURIComponent(tabName + '!A1')}`;
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${cleanId}/values/${encodeURIComponent("'" + tabName + "'!A1")}`;
         
         const res = await fetch(url, { 
             headers: { Authorization: `Bearer ${token}` } 

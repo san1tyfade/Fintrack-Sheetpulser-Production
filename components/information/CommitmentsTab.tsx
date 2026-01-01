@@ -20,23 +20,42 @@ export const CommitmentsTab: React.FC<CommitmentsTabProps> = ({
 }) => {
   const [showAllDebt, setShowAllDebt] = useState(false);
 
+  // Identify the "Active" debt records (Current month or most recent past)
+  // This logic is crucial for amortization schedules: we only want the current month's row.
+  const activeDebts = useMemo(() => {
+    if (!debtEntries || debtEntries.length === 0) return [];
+    
+    const today = new Date().toISOString().split('T')[0];
+    const currentMonthPrefix = today.substring(0, 7); // "YYYY-MM"
+    
+    // Sort by date to make finding the most recent entry easier
+    const sorted = [...debtEntries].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    
+    // 1. Try to find the exact entry for the current month
+    const currentMonthEntry = sorted.find(d => d.date?.startsWith(currentMonthPrefix));
+    if (currentMonthEntry) return [currentMonthEntry];
+    
+    // 2. Fallback: Find the latest entry that has already passed (current state)
+    const latestPastEntry = sorted.find(d => d.date && d.date <= today);
+    if (latestPastEntry) return [latestPastEntry];
+    
+    // 3. Final Fallback: Just show the first available entry (likely the start of the schedule)
+    return [sorted[sorted.length - 1]];
+  }, [debtEntries]);
+
   const subStats = useMemo(() => {
     const active = subscriptions.filter(s => s.active);
     const cost = active.reduce((acc, s) => acc + calculateMonthlyBurn(s.cost, s.period), 0);
     return { count: active.length, monthlyCost: cost };
   }, [subscriptions]);
 
-  const validDebtEntries = useMemo(() => 
-    (debtEntries || []).filter(d => d.date && d.date.trim() !== ''), 
-    [debtEntries]
-  );
-
   const totalMonthlyBurn = useMemo(() => 
-    subStats.monthlyCost + (validDebtEntries.reduce((acc, d) => acc + (d.monthlyPayment || 0), 0) || 0), 
-    [subStats.monthlyCost, validDebtEntries]
+    subStats.monthlyCost + (activeDebts.reduce((acc, d) => acc + (d.monthlyPayment || 0), 0)), 
+    [subStats.monthlyCost, activeDebts]
   );
 
-  const visibleDebt = showAllDebt ? validDebtEntries : validDebtEntries.slice(0, 2);
+  // For the registry display, we show only the active row or a short list
+  const visibleDebt = showAllDebt ? activeDebts : activeDebts.slice(0, 5);
 
   return (
     <div className="space-y-10 animate-fade-in">
@@ -83,12 +102,12 @@ export const CommitmentsTab: React.FC<CommitmentsTabProps> = ({
             <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-3">
               <TrendingDown size={24} className="text-rose-500" /> Liabilities Registry
             </h3>
-            {validDebtEntries.length > 2 && (
+            {activeDebts.length > 5 && (
               <button 
                 onClick={() => setShowAllDebt(!showAllDebt)} 
                 className="text-[10px] font-black uppercase tracking-widest text-blue-500 flex items-center gap-2 hover:bg-blue-50 dark:hover:bg-blue-900/30 px-4 py-2 rounded-2xl transition-all"
               >
-                {showAllDebt ? <><ChevronUp size={14} /> Less</> : <><ChevronDown size={14} /> View All ({validDebtEntries.length})</>}
+                {showAllDebt ? <><ChevronUp size={14} /> Less</> : <><ChevronDown size={14} /> View All ({activeDebts.length})</>}
               </button>
             )}
           </div>
@@ -107,8 +126,8 @@ export const CommitmentsTab: React.FC<CommitmentsTabProps> = ({
                     <td className="p-8 text-right font-black text-rose-500 font-mono text-xl">{formatBaseCurrency(d.amountOwed)}</td>
                   </tr>
                 ))}
-                {validDebtEntries.length === 0 && (
-                  <tr><td colSpan={2} className="p-10 text-center text-xs text-slate-400 font-medium">No valid liabilities detected in spreadsheet.</td></tr>
+                {activeDebts.length === 0 && (
+                  <tr><td colSpan={2} className="p-10 text-center text-xs text-slate-400 font-medium">No valid liabilities detected. Ensure debt table headers match expectation.</td></tr>
                 )}
               </tbody>
             </table>

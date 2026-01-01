@@ -70,15 +70,8 @@ const mapAccountToRow = (acc: BankAccount, headers: string[]) => {
 
 // --- API Helpers ---
 
-/**
- * Enhanced Header Fetching
- * Scans top 10 rows to find the header row, similar to how the parser works.
- * This ensures that mapping logic finds the correct column indices even if 
- * the sheet has notes/titles at the top.
- */
 const fetchHeaders = async (sheetId: string, tabName: string, token: string) => {
-    // Scan deeper (10 rows) to ensure we find headers if they aren't on Row 1
-    const range = encodeURIComponent(`${tabName}!A1:Z10`);
+    const range = encodeURIComponent(`'${tabName}'!A1:Z10`);
     const headerRes = await fetch(`${BASE_URL}/${sheetId}/values/${range}`, {
         headers: { Authorization: `Bearer ${token}` }
     });
@@ -89,7 +82,6 @@ const fetchHeaders = async (sheetId: string, tabName: string, token: string) => 
     const rows = headerJson.values || [];
     if (rows.length === 0) throw new Error(`Tab '${tabName}' is empty.`);
     
-    // Pick the row with the most non-empty columns as the likely header row
     const bestRow = rows.reduce((best: string[], current: string[]) => 
         (current.filter(v => v).length > best.filter(v => v).length) ? current : best, rows[0]);
 
@@ -109,19 +101,11 @@ const getSheetGridId = async (spreadsheetId: string, tabName: string, token: str
 
 // --- Generic Row Operations ---
 
-/**
- * FIXED: Uses insertDataOption=INSERT_ROWS and a cleaner range.
- * This prevents the Google Sheets API from overwriting existing data if it misidentifies 
- * the end of the table or if filters are active.
- */
 const appendToSheet = async (sheetId: string, tabName: string, rowValues: any[]) => {
     const token = getAccessToken();
     if (!token) throw new Error("Authentication required.");
     
-    // Use the tab name directly to allow Google to find the table bounds
-    const range = encodeURIComponent(`${tabName}!A:Z`);
-    
-    // insertDataOption=INSERT_ROWS is critical to prevent overwriting existing data
+    const range = encodeURIComponent(`'${tabName}'!A:Z`);
     const url = `${BASE_URL}/${sheetId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     
     const res = await fetch(url, {
@@ -141,7 +125,7 @@ const updateRowInSheet = async (sheetId: string, tabName: string, rowIndex: numb
     const token = getAccessToken();
     if (!token) throw new Error("Authentication required.");
     const rowNumber = rowIndex + 1;
-    const range = encodeURIComponent(`${tabName}!A${rowNumber}`);
+    const range = encodeURIComponent(`'${tabName}'!A${rowNumber}`);
     const res = await fetch(`${BASE_URL}/${sheetId}/values/${range}?valueInputOption=USER_ENTERED`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -157,7 +141,7 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
     const token = getAccessToken();
     if (!token) throw new Error("Authentication required.");
 
-    const incomeHeaderRange = encodeURIComponent(`${incomeTab}!B3`);
+    const incomeHeaderRange = encodeURIComponent(`'${incomeTab}'!B3`);
     const headerRes = await fetch(`${BASE_URL}/${spreadsheetId}/values/${incomeHeaderRange}`, {
         headers: { Authorization: `Bearer ${token}` }
     });
@@ -171,7 +155,7 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
     const nextYearFull = currentYearFull + 1;
     const nextYearShort = String(nextYearFull).slice(-2);
 
-    const totalsRange = encodeURIComponent(`${incomeTab}!B6:M6`);
+    const totalsRange = encodeURIComponent(`'${incomeTab}'!B6:M6`);
     const totalsRes = await fetch(`${BASE_URL}/${spreadsheetId}/values/${totalsRange}`, {
         headers: { Authorization: `Bearer ${token}` }
     });
@@ -199,9 +183,9 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
 
     const emptyDetailsRow = new Array(12).fill("");
     const archiveDataUpdates = [
-        { range: `${archivedIncomeName}!B4:M4`, values: incomeTotalsRow }, 
-        { range: `${archivedIncomeName}!B5:M6`, values: [emptyDetailsRow, emptyDetailsRow] }, 
-        { range: `${archivedIncomeName}!A4`, values: [['ANNUAL SNAPSHOT']] } 
+        { range: `'${archivedIncomeName}'!B4:M4`, values: incomeTotalsRow }, 
+        { range: `'${archivedIncomeName}'!B5:M6`, values: [emptyDetailsRow, emptyDetailsRow] }, 
+        { range: `'${archivedIncomeName}'!A4`, values: [['ANNUAL SNAPSHOT']] } 
     ];
 
     const archiveModRes = await fetch(`${BASE_URL}/${spreadsheetId}/values:batchUpdate`, {
@@ -223,12 +207,13 @@ export const resetYearlyLedger = async (spreadsheetId: string, incomeTab: string
     const emptySmallScrub = new Array(2).fill(emptyRow); 
 
     const activeSheetUpdates = [
-        { range: `${incomeTab}!B3:M3`, values: [nextYearHeaders] },      
-        { range: `${incomeTab}!B4:M5`, values: emptySmallScrub },        
-        { range: `${incomeTab}!B10:M${10 + scrubRowsCount}`, values: emptyLargeScrub }, 
+        { range: `'${incomeTab}'!B3:M3`, values: [nextYearHeaders] },      
+        { range: `'${incomeTab}'!B4:M5`, values: emptySmallScrub },        
+        { range: `'${incomeTab}'!B9:M9`, values: [nextYearHeaders] },      // ADDED: Update headers for second section
+        { range: `'${incomeTab}'!B10:M${10 + scrubRowsCount}`, values: emptyLargeScrub }, 
 
-        { range: `${expenseTab}!B6:M6`, values: [nextYearHeaders] },     
-        { range: `${expenseTab}!B7:M${7 + scrubRowsCount}`, values: emptyLargeScrub }    
+        { range: `'${expenseTab}'!B6:M6`, values: [nextYearHeaders] },     
+        { range: `'${expenseTab}'!B7:M${7 + scrubRowsCount}`, values: emptyLargeScrub }    
     ];
 
     const resetRes = await fetch(`${BASE_URL}/${spreadsheetId}/values:batchUpdate`, {
@@ -310,7 +295,7 @@ export const updateLedgerValue = async (sheetId: string, tabName: string, catego
     const token = getAccessToken();
     if (!token) throw new Error("Authentication required.");
 
-    const colARange = encodeURIComponent(`${tabName}!A:A`);
+    const colARange = encodeURIComponent(`'${tabName}'!A:A`);
     const searchRes = await fetch(`${BASE_URL}/${sheetId}/values/${colARange}`, {
         headers: { Authorization: `Bearer ${token}` }
     });
@@ -350,7 +335,7 @@ export const updateLedgerValue = async (sheetId: string, tabName: string, catego
 
     const rowNum = targetRowIndex + 1; 
     const colLetter = getColumnLetter(monthIndex); 
-    const range = encodeURIComponent(`${tabName}!${colLetter}${rowNum}`);
+    const range = encodeURIComponent(`'${tabName}'!${colLetter}${rowNum}`);
     
     const res = await fetch(`${BASE_URL}/${sheetId}/values/${range}?valueInputOption=USER_ENTERED`, {
         method: 'PUT',
