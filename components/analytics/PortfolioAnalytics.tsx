@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { PortfolioLogEntry, TimeFocus, CustomDateRange, Trade } from '../../types';
+import { PortfolioLogEntry, TimeFocus, CustomDateRange, Trade, Investment } from '../../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell, LabelList } from 'recharts';
 import { Zap, Target, BarChart3 } from 'lucide-react';
 import { formatBaseCurrency } from '../../services/currencyService';
@@ -8,11 +8,13 @@ import { processPortfolioHistory, calculatePortfolioAttribution } from '../../se
 import { calculateMaxDrawdown, calculateGrowthVelocity } from '../../services/math/financialMath';
 import { transformWaterfallData, transformBenchmarkComparison } from '../../services/analytics/transformers';
 import { fetchHistoricalPrices } from '../../services/priceService';
+import { normalizeTicker } from '../../services/geminiService';
 import { AnalyticsCard, StatHighlight, StandardTooltip } from './AnalyticsPrimitives';
 
 interface PortfolioAnalyticsProps {
   history: PortfolioLogEntry[];
   trades: Trade[];
+  investments: Investment[];
   timeFocus: TimeFocus;
   customRange: CustomDateRange;
 }
@@ -20,7 +22,7 @@ interface PortfolioAnalyticsProps {
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f97316'];
 const BENCHMARKS = [{ id: 'SPY', name: 'S&P 500', color: '#10b981' }, { id: 'XIU.TO', name: 'TSX 60', color: '#ef4444' }, { id: 'QQQ', name: 'Nasdaq 100', color: '#8b5cf6' }];
 
-export const PortfolioAnalytics: React.FC<PortfolioAnalyticsProps> = ({ history, trades, timeFocus, customRange }) => {
+export const PortfolioAnalytics: React.FC<PortfolioAnalyticsProps> = ({ history, trades, investments, timeFocus, customRange }) => {
   const [selectedBenchmark, setSelectedBenchmark] = useState('SPY');
   const [selectedAccount, setSelectedAccount] = useState('TOTAL');
   const [benchmarkHistory, setBenchmarkHistory] = useState<{date: string, price: number}[]>([]);
@@ -45,7 +47,27 @@ export const PortfolioAnalytics: React.FC<PortfolioAnalyticsProps> = ({ history,
     };
   }, [accountAwareData]);
 
-  const attribution = useMemo(() => calculatePortfolioAttribution(accountAwareData, trades, timeFocus, customRange), [accountAwareData, trades, timeFocus, customRange]);
+  // Account-Specific Trade Filtering
+  // This prevents global trades from affecting individual account waterfall bridges.
+  const accountTrades = useMemo(() => {
+    if (selectedAccount === 'TOTAL') return trades;
+    
+    // 1. Identify all tickers held in this specific account
+    const tickersInAccount = new Set(
+        investments
+            .filter(i => (i.accountName || '').toUpperCase() === selectedAccount.toUpperCase())
+            .map(i => normalizeTicker(i.ticker))
+    );
+    
+    // 2. Filter trades to only include those relevant tickers
+    return trades.filter(t => tickersInAccount.has(normalizeTicker(t.ticker)));
+  }, [trades, selectedAccount, investments]);
+
+  const attribution = useMemo(() => 
+    calculatePortfolioAttribution(accountAwareData, accountTrades, timeFocus, customRange), 
+    [accountAwareData, accountTrades, timeFocus, customRange]
+  );
+
   const waterfallData = useMemo(() => transformWaterfallData(attribution), [attribution]);
 
   useEffect(() => {

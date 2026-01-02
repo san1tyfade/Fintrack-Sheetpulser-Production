@@ -19,7 +19,7 @@ interface AnalyticsViewProps {
 }
 
 export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ 
-  timeline, portfolioHistory, incomeData, expenseData, trades, isLoading, assets 
+  timeline, portfolioHistory, incomeData, expenseData, trades, investments, isLoading, assets 
 }) => {
   const [subView, setSubView] = useState<AnalyticsSubView>('FLOW');
   const [timeFocus, setTimeFocus] = useState<TimeFocus>(TimeFocus.ROLLING_12M);
@@ -79,6 +79,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
               <PortfolioAnalytics 
                   history={portfolioHistory} 
                   trades={trades}
+                  investments={investments}
                   timeFocus={timeFocus} 
                   customRange={customRange} 
               />

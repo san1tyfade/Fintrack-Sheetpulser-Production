@@ -539,7 +539,7 @@ export const DataIngest: React.FC<DataIngestProps> = ({
       
       <footer className="pt-12 pb-8 flex flex-col items-center gap-4 border-t border-slate-100 dark:border-slate-800/50">
           <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
-             <ShieldCheck size={14} className="text-emerald-500" /> Sheetsense Production Build v1.0.0
+             <ShieldCheck size={14} className="text-emerald-500" /> Sheetsense Production Build v1.1.0
           </div>
           <p className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest">Local-First Architecture • End-to-End Privacy</p>
       </footer>

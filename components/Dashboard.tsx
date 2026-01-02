@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
-import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry, TimeFocus, Trade, CustomDateRange } from '../types';
-import { DollarSign, Wallet, Loader2, TrendingUp, ArrowUpRight } from 'lucide-react';
+import { Asset, NetWorthEntry, ExchangeRates, IncomeEntry, ExpenseEntry, TimeFocus, Trade, CustomDateRange, ViewState } from '../types';
+import { DollarSign, Wallet, Loader2, TrendingUp, ArrowUpRight, Shield } from 'lucide-react';
 import { PRIMARY_CURRENCY } from '../services/currencyService';
 import { calculateDashboardAggregates, resolveAttribution, processNetIncomeTrend } from '../services/dashboard/dashboardService';
 import { StatsCard } from './dashboard/DashboardStats';
@@ -22,10 +22,11 @@ interface DashboardProps {
   onTimeFocusChange?: (focus: TimeFocus) => void;
   availableYears?: number[];
   onYearChange?: (year: number) => void;
+  onViewChange?: (view: ViewState) => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
-    assets, netWorthHistory = [], incomeData = [], expenseData = [], isLoading = false, exchangeRates, isDarkMode = true, selectedYear = new Date().getFullYear(), timeFocus = TimeFocus.FULL_YEAR, onTimeFocusChange, availableYears = [], onYearChange
+    assets, netWorthHistory = [], incomeData = [], expenseData = [], isLoading = false, exchangeRates, isDarkMode = true, selectedYear = new Date().getFullYear(), timeFocus = TimeFocus.FULL_YEAR, onTimeFocusChange, availableYears = [], onYearChange, onViewChange
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [customRange, setCustomRange] = useState<CustomDateRange>({ start: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0], end: new Date().toISOString().split('T')[0] });
@@ -101,6 +102,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {selectedCategory && allocationData.length > 0 && (
             <DrilldownView category={selectedCategory} assets={assets.filter(a => (a.type || 'Other') === selectedCategory)} exchangeRates={exchangeRates} />
         )}
+
+        <footer className="mt-20 pt-10 border-t border-slate-200 dark:border-slate-800 flex justify-center">
+            <button 
+                onClick={() => onViewChange?.(ViewState.PRIVACY)}
+                className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-blue-500 transition-colors flex items-center gap-2 group"
+            >
+                <Shield size={12} className="group-hover:scale-110 transition-transform" /> Privacy Protocol & Security Standards
+            </button>
+        </footer>
       </div>
     </div>
   );

@@ -33,9 +33,9 @@ export const Navigation: React.FC<NavigationProps> = ({
         <div className="p-6 hidden md:block">
             <div className="flex items-center justify-between">
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-emerald-500 dark:from-blue-400 dark:to-emerald-400 bg-clip-text text-transparent tracking-tighter">
-                Sheetsense
+                Sheetsense Money
                 </h1>
-                <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-500 text-[8px] font-black tracking-widest border border-blue-500/20 shadow-sm">V1.0</span>
+                <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-500 text-[8px] font-black tracking-widest border border-blue-500/20 shadow-sm">V1.1</span>
             </div>
             <p className="text-slate-500 dark:text-slate-400 text-[10px] mt-1 font-bold uppercase tracking-widest flex items-center gap-1.5 opacity-60">
                <ShieldCheck size={10} className="text-emerald-500" /> Secure Protocol

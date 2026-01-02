@@ -210,9 +210,22 @@ export const aggregateDimensions = (transactions: NormalizedTransaction[], path:
 
     filtered.forEach(t => {
         let label = '';
-        if (path.length === 0) label = t.category || 'Uncategorized';
-        else if (path.length === 1 && t.category === path[0]) label = t.subCategory || 'Other';
-        else return;
+        if (path.length === 0) {
+            label = t.category || 'Uncategorized';
+        } else if (path.length === 1) {
+            if (t.category !== path[0]) return;
+            label = t.subCategory || 'Other';
+        } else if (path.length === 2) {
+            if (t.category !== path[0] || t.subCategory !== path[1]) return;
+            // Group by Date (Month) for the leaf node drilldown
+            // FIX: Manual parsing from ISO string ("YYYY-MM-DD") to Local Date components
+            // prevents the UTC timezone shift that causes labels to be off by one month.
+            const parts = t.date.split('-');
+            const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            label = d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+        } else {
+            return;
+        }
 
         if (!groups[label]) groups[label] = { total: 0, count: 0 };
         groups[label].total += t.amount;
@@ -221,7 +234,10 @@ export const aggregateDimensions = (transactions: NormalizedTransaction[], path:
 
     return Object.entries(groups)
         .map(([name, stats]) => ({ name, ...stats }))
-        .sort((a, b) => b.total - a.total);
+        .sort((a, b) => {
+            // Sorting by total descending for size-based visualization
+            return b.total - a.total;
+        });
 };
 
 export const aggregateComparativeTrend = (currentTransactions: NormalizedTransaction[], shadowTransactions: NormalizedTransaction[], path: string[], type: 'INCOME' | 'EXPENSE') => {

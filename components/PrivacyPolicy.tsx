@@ -64,7 +64,7 @@ export const PrivacyPolicy: React.FC<PrivacyPolicyProps> = ({ onBack, isInline =
             </div>
             <div>
                 <h2 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Privacy Protocol</h2>
-                <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Sheetsense Production Build v1.0.0 — Security Standards</p>
+                <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Sheetsense Production Build v1.1.0 — Security Standards</p>
             </div>
         </div>
       </header>
